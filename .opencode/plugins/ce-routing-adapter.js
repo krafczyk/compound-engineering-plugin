@@ -951,8 +951,28 @@ export function createOpenCodeSdkHost(client) {
       return unwrap(client.session.get(input))
     },
     async listModels(input) {
-      const body = await unwrap(client.model.list({ location: { directory: input.directory } }))
-      return body.data ?? body
+      const body = await unwrap(client.provider.list({ directory: input.directory }))
+      if (!Array.isArray(body?.all) || !Array.isArray(body?.connected)) return []
+      const connected = new Set(body.connected)
+      return body.all.flatMap((provider) => {
+        if (
+          typeof provider?.id !== "string"
+          || !connected.has(provider.id)
+          || !provider.models
+          || typeof provider.models !== "object"
+          || Array.isArray(provider.models)
+        ) return []
+        return Object.entries(provider.models).flatMap(([catalogID, model]) => {
+          if (!model || typeof model !== "object" || Array.isArray(model)) return []
+          const id = typeof model.id === "string" ? model.id : catalogID
+          const variants = Array.isArray(model.variants)
+            ? model.variants
+            : model.variants && typeof model.variants === "object"
+              ? Object.keys(model.variants)
+              : []
+          return [{ ...model, providerID: provider.id, id, enabled: model.enabled !== false, variants }]
+        })
+      })
     },
     async listAgents(input) {
       return unwrap(client.app.agents({ directory: input.directory }))

@@ -541,8 +541,29 @@ describe("OpenCode routed task adapter", () => {
         abort: (input: unknown) => { calls.push(["session.abort", input]); return { data: true } },
         status: (input: unknown) => { calls.push(["session.status", input]); return { data: { child: { type: "idle" } } } },
       },
-      model: {
-        list: (input: unknown) => { calls.push(["model.list", input]); return { data: { data: [{ id: "model" }] } } },
+      provider: {
+        list: (input: unknown) => {
+          calls.push(["provider.list", input])
+          return {
+            data: {
+              connected: ["openai"],
+              all: [
+                {
+                  id: "openai",
+                  models: {
+                    model: { id: "model", variants: { high: {} } },
+                  },
+                },
+                {
+                  id: "anthropic",
+                  models: {
+                    unavailable: { id: "unavailable" },
+                  },
+                },
+              ],
+            },
+          }
+        },
       },
       app: {
         agents: (input: unknown) => { calls.push(["app.agents", input]); return { data: [{ name: "general" }] } },
@@ -556,7 +577,9 @@ describe("OpenCode routed task adapter", () => {
     expect(await host.getSession({ sessionID: "parent", directory: "/repo" })).toEqual({ id: "parent" })
     expect(await host.listAgents({ directory: "/repo" })).toEqual([{ name: "general" }])
     expect(await host.getConfig({ directory: "/repo" })).toEqual({ subagent_depth: 1 })
-    expect(await host.listModels({ directory: "/repo" })).toEqual([{ id: "model" }])
+    expect(await host.listModels({ directory: "/repo" })).toEqual([
+      { id: "model", providerID: "openai", enabled: true, variants: ["high"] },
+    ])
     const controller = new AbortController()
     expect(await host.createSession({ parentID: "parent", directory: "/repo", signal: controller.signal })).toEqual({ id: "child" })
     await host.prompt({ sessionID: "child", directory: "/repo" })
@@ -566,7 +589,7 @@ describe("OpenCode routed task adapter", () => {
       ["session.get", { sessionID: "parent", directory: "/repo" }],
       ["app.agents", { directory: "/repo" }],
       ["config.get", { directory: "/repo" }],
-      ["model.list", { location: { directory: "/repo" } }],
+      ["provider.list", { directory: "/repo" }],
       ["session.create", [{ parentID: "parent", directory: "/repo" }, { signal: controller.signal }]],
       ["session.prompt", [{ sessionID: "child", directory: "/repo" }, undefined]],
       ["session.abort", { sessionID: "child", directory: "/repo" }],

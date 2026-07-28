@@ -54,10 +54,16 @@ function fakeSdk() {
       abort: async () => ({ data: true }),
       status: async () => ({ data: { "child-session": { type: "idle" } } }),
     },
-    model: {
+    provider: {
       list: async () => ({
         data: {
-          data: [{ providerID: "openai", id: "routed-model", enabled: true, variants: [{ id: "high" }] }],
+          connected: ["openai"],
+          all: [{
+            id: "openai",
+            models: {
+              "routed-model": { id: "routed-model", variants: { high: {} } },
+            },
+          }],
         },
       }),
     },
