@@ -487,6 +487,14 @@ export function createOpenCodeRoutingAdapter(options) {
         directory: state.directory,
         preparationClaim: state.preparationClaim,
       })
+      state.publishMetadata?.({
+        title: state.description,
+        metadata: {
+          parentSessionId: state.sessionID,
+          sessionId: child.id,
+          model: { providerID: state.selector.providerID, modelID: state.selector.modelID },
+        },
+      })
       if (closingSessions.has(state.sessionID) || closingChildren.has(child.id) || state.epoch !== currentEpoch(state.sessionID)) {
         if (!await childStopped(child.id, state)) {
           const unknown = new Error("OpenCode routed child status is unknown and may still be in flight")
@@ -595,6 +603,7 @@ export function createOpenCodeRoutingAdapter(options) {
         directory: input.directory,
         description: input.description,
         prompt: input.prompt,
+        publishMetadata: input.publishMetadata,
         snapshot: resolved.snapshot,
         attemptLock,
         item,

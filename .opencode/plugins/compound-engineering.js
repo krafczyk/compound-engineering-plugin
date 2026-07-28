@@ -197,6 +197,9 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
           description: args.description,
           prompt: args.prompt,
           signal: context.abort,
+          publishMetadata: typeof context.metadata === "function"
+            ? (input) => context.metadata(input)
+            : undefined,
           authorizeTask: () => context.ask({
             permission: "task",
             patterns: ["general"],

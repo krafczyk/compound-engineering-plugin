@@ -151,6 +151,7 @@ describe("native OpenCode routing integration", () => {
       })({ serverUrl: new URL("http://127.0.0.1:4096"), directory: project })
       const prompt = "CE prompt bytes\nremain exactly unchanged."
       const abort = new AbortController()
+      const metadata: Record<string, any>[] = []
       const prepared = await configuredPlugin.tool.ce_task_prepare.execute({
         role,
         instances: ["integration-instance"],
@@ -169,6 +170,7 @@ describe("native OpenCode routing integration", () => {
         directory: project,
         abort: abort.signal,
         ask: async (input: Record<string, any>) => { routedSdk.calls.asks.push(structuredClone(input)) },
+        metadata: (input: Record<string, any>) => { metadata.push(structuredClone(input)) },
       })
 
       expect(routed.output).toBe("routed worker output")
@@ -187,6 +189,14 @@ describe("native OpenCode routing integration", () => {
           effort_actual: "high",
         },
       })
+      expect(metadata).toEqual([{
+        title: "implement the unit",
+        metadata: {
+          parentSessionId: "configured-session",
+          sessionId: "child-session",
+          model: { providerID: "openai", modelID: "routed-model" },
+        },
+      }])
       expect(routedSdk.calls.asks).toEqual([expect.objectContaining({
         permission: "task",
         patterns: ["general"],

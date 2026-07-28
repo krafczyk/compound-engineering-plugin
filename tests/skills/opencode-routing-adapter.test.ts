@@ -251,6 +251,35 @@ describe("OpenCode routed task adapter", () => {
     })
   })
 
+  test("publishes child navigation metadata before prompting the routed worker", async () => {
+    const candidate = { harness: "opencode", model: "openai/gpt-5.6", effort: "high" }
+    const { host } = fakeHost()
+    const updates: Record<string, any>[] = []
+    const prompt = host.prompt
+    host.prompt = async (input: Record<string, any>) => {
+      expect(updates).toEqual([{
+        title: "inspect the change",
+        metadata: {
+          parentSessionId: "parent-session",
+          sessionId: "child-session",
+          model: { providerID: "openai", modelID: "gpt-5.6" },
+        },
+      }])
+      return prompt(input)
+    }
+    const adapter = createOpenCodeRoutingAdapter({ host, resolver: fakeResolver(candidate) })
+
+    await adapter.execute({
+      sessionID: "parent-session",
+      callID: "call-1",
+      directory: "/repo",
+      role: ROLE,
+      description: "inspect the change",
+      prompt: "prompt",
+      publishMetadata: (input: Record<string, any>) => updates.push(structuredClone(input)),
+    })
+  })
+
   test("uses only host response identity for receipts and ignores worker model claims", async () => {
     const candidate = { harness: "opencode", model: "openai/gpt-5.6", effort: "high" }
     const { host } = fakeHost({
