@@ -449,6 +449,33 @@ describe("dispatch role coverage", () => {
     expect(sourceSites.sort()).toEqual(Object.keys(value.sites).sort())
   })
 
+  test("routing batch instructions use catalog site and role IDs", async () => {
+    const value = await catalog()
+    const problems: string[] = []
+    let checked = 0
+
+    for (const [site, metadata] of Object.entries(value.sites)) {
+      if (!metadata.file.endsWith(".md")) continue
+      const lines = (await readFile(path.join(repoRoot, metadata.file), "utf8")).split("\n")
+      const marker = `<!-- ce-dispatch-site:${metadata.source_marker ?? site} -->`
+      const markerIndex = lines.findIndex((line) => line.trim() === marker)
+      const routingLine = lines
+        .slice(Math.max(0, markerIndex - 3), markerIndex)
+        .find((line) => /^\s*\*\*Routing batch: `[^`]+`\.\*\*/.test(line))
+      if (!routingLine) continue
+      checked++
+
+      const routingSite = routingLine.match(/\*\*Routing batch: `([^`]+)`\.\*\*/)?.[1]
+      if (routingSite !== site) problems.push(`${metadata.file}: routing batch ${routingSite} must use catalog site ${site}`)
+      for (const role of metadata.roles) {
+        if (!routingLine.includes(`\`${role}\``)) problems.push(`${metadata.file}: routing batch ${site} omits role ${role}`)
+      }
+    }
+
+    expect(checked).toBeGreaterThan(0)
+    expect(problems, `invalid routing batch identifiers:\n${problems.join("\n")}`).toEqual([])
+  })
+
   test("scanner does not exempt a whole file after one marker", () => {
     const source = [
       "<!-- ce-dispatch-site:ce-test.first -->",
