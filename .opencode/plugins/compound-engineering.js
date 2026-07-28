@@ -224,7 +224,12 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
         return {
           title: `CE routed task: ${args.role}`,
           output: result.output,
-          metadata: { receipt: result.receipt },
+          metadata: {
+            parentSessionId: context.sessionID,
+            sessionId: result.childSessionID,
+            model: result.model,
+            receipt: result.receipt,
+          },
         }
       },
     }),

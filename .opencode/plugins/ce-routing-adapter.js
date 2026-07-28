@@ -554,7 +554,7 @@ export function createOpenCodeRoutingAdapter(options) {
       closing.receipt = finalized.receipt
       throw closing
     }
-    return { finalized, response }
+    return { finalized, response, childID: child.id }
   }
 
   function externalComparison(resolved, instances) {
@@ -690,6 +690,8 @@ export function createOpenCodeRoutingAdapter(options) {
         kind: "routed",
         output: textOutput(attempted.response),
         receipt: attempted.finalized.receipt,
+        childSessionID: attempted.childID,
+        model: { providerID: selector.providerID, modelID: selector.modelID },
       }
     }
     throw new Error("OpenCode routed task unavailable: candidate list exhausted")

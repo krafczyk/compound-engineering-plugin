@@ -172,15 +172,20 @@ describe("native OpenCode routing integration", () => {
       })
 
       expect(routed.output).toBe("routed worker output")
-      expect(routed.metadata.receipt).toMatchObject({
-        role,
-        profile: "integration",
-        source_layer: "project-role",
-        identity_status: "verified",
-        provider_actual: "openai",
-        model_actual: "routed-model",
-        variant_actual: "high",
-        effort_actual: "high",
+      expect(routed.metadata).toMatchObject({
+        parentSessionId: "configured-session",
+        sessionId: "child-session",
+        model: { providerID: "openai", modelID: "routed-model" },
+        receipt: {
+          role,
+          profile: "integration",
+          source_layer: "project-role",
+          identity_status: "verified",
+          provider_actual: "openai",
+          model_actual: "routed-model",
+          variant_actual: "high",
+          effort_actual: "high",
+        },
       })
       expect(routedSdk.calls.asks).toEqual([expect.objectContaining({
         permission: "task",
