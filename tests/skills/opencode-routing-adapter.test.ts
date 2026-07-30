@@ -1515,6 +1515,18 @@ describe("OpenCode routed task adapter", () => {
       await writeFile(resolverPath, "import sys\nprint('{}')\nraise SystemExit(7)\n")
       await expect(run()).rejects.toThrow(/exited 7/i)
 
+      const resolverMessage = "worker reported an actionable routing failure: ".concat("x".repeat(600))
+      await writeFile(resolverPath, [
+        "import json",
+        "message = 'worker reported an actionable routing failure: ' + 'x' * 600",
+        "print(json.dumps({'error': {'code': 'ROUTE_UNAVAILABLE', 'message': message}}))",
+        "raise SystemExit(9)",
+        "",
+      ].join("\n"))
+      await expect(run({ maxStdoutBytes: 2_048 })).rejects.toEqual(
+        new Error(`OpenCode routing resolver exited 9: ROUTE_UNAVAILABLE ${resolverMessage.slice(0, 500)} `),
+      )
+
       await writeFile(resolverPath, [
         "import json",
         "print(json.dumps({'protocol': 'ce-routing/v1', 'op': 'opencode_host', 'action': 'block', 'error': {'code': 'IDENTITY_REQUIRED'}, 'receipt': {}}))",

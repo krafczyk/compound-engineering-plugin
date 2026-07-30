@@ -926,7 +926,10 @@ export function createOpenCodeResolver({
               resolve(body)
               return
             }
-            const detail = body?.error?.code ? ` ${body.error.code}` : ""
+            const detail = [body?.error?.code, body?.error?.message]
+              .filter((value) => typeof value === "string")
+              .map((value) => ` ${value.slice(0, 500)}`)
+              .join("")
             reject(new Error(`OpenCode routing resolver exited ${code}:${detail} ${stderr.slice(0, 500)}`))
           } catch {
             reject(new Error(`OpenCode routing resolver exited ${code}: ${stderr.slice(0, 500)}`))
