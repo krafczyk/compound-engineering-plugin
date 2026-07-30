@@ -592,6 +592,12 @@ OpenCode and Pi use native package/plugin loading from this repository. The Bun 
 
 Release versions are owned by release automation. Routine feature PRs should not hand-bump plugin or marketplace manifest versions.
 
+### Component Identity
+
+`component.json` declares Compound Engineering's schema-1 owner metadata. It records a `tested-with` baseline for the OpenCode SDK version pinned by the routing protocol; this is a tested baseline, not a broader support promise, and version suffixes are compared literally.
+
+`compound-engineering-plugin-v1` is a SHA-256 digest over framed, ASCII-relative runtime inputs: the skills tree (including copied routing assets), platform manifests, package metadata, and native OpenCode/Pi entrypoints. It rejects symlinks, special files, changes during reading, and configured file, byte, and time limits. Dependencies, VCS data, generated state, and authoring-only documentation are excluded, so matching release versions can still be compared by trustworthy content identity.
+
 ## FAQ
 
 ### Do I need Bun to install Compound Engineering?

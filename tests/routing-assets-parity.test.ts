@@ -74,6 +74,27 @@ async function runSync(sync: string, mode: "--write" | "--check") {
 }
 
 describe("routing runtime asset parity", () => {
+  test("declares the tested OpenCode SDK baseline with literal suffix handling", async () => {
+    const [component, protocol, packageJson] = await Promise.all([
+      readFile(path.join(repoRoot, "component.json"), "utf8").then(JSON.parse),
+      readFile(path.join(routingRoot, "protocol-schema.json"), "utf8").then(JSON.parse),
+      readFile(path.join(repoRoot, "package.json"), "utf8").then(JSON.parse),
+    ])
+    const relationship = component.relationships.find((item: { id: string }) => item.id === "tested-opencode-sdk")
+
+    expect(relationship).toEqual({
+      id: "tested-opencode-sdk",
+      type: "tested-with",
+      target_component: "opencode",
+      contract: {
+        kind: "tested-baseline",
+        version: protocol.opencode_tested_sdk_version,
+        suffix_policy: "literal",
+      },
+    })
+    expect(protocol.opencode_tested_sdk_version).toBe(packageJson.dependencies["@opencode-ai/sdk"])
+  })
+
   test("every catalog-derived consumer has all canonical bytes", async () => {
     await Promise.all((await consumers()).map(async (consumer) => {
       await access(path.join(skillsRoot, consumer, "SKILL.md"))

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "fs/promises"
+import { mkdtemp, mkdir, readFile, writeFile } from "fs/promises"
 import os from "os"
 import path from "path"
 import { afterEach, describe, expect, test } from "bun:test"
@@ -189,6 +189,24 @@ async function makeFixtureRoot(): Promise<string> {
 }
 
 describe("release metadata", () => {
+  test("keeps component metadata version release-owned and in root parity", async () => {
+    const root = path.join(import.meta.dir, "..")
+    const [component, packageJson, claudeManifest, config] = await Promise.all([
+      readFile(path.join(root, "component.json"), "utf8").then(JSON.parse),
+      readFile(path.join(root, "package.json"), "utf8").then(JSON.parse),
+      readFile(path.join(root, ".claude-plugin", "plugin.json"), "utf8").then(JSON.parse),
+      readFile(path.join(root, ".github", "release-please-config.json"), "utf8").then(JSON.parse),
+    ])
+
+    expect(component.component_version).toBe(packageJson.version)
+    expect(component.component_version).toBe(claudeManifest.version)
+    expect(config.packages["."]["extra-files"]).toContainEqual({
+      type: "json",
+      path: "component.json",
+      jsonpath: "$.component_version",
+    })
+  })
+
   test("reports current compound-engineering counts from the repo", async () => {
     const counts = await getCompoundEngineeringCounts(process.cwd())
 

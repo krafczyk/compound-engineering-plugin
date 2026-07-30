@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "component_id": "compound-engineering",
+  "component_version": "3.20.0",
+  "relationships": [
+    {
+      "id": "tested-opencode-sdk",
+      "type": "tested-with",
+      "target_component": "opencode",
+      "contract": {
+        "kind": "tested-baseline",
+        "version": "1.18.3",
+        "suffix_policy": "literal"
+      }
+    }
+  ],
+  "identity_profile": {
+    "id": "compound-engineering-plugin-v1",
+    "algorithm": "sha256",
+    "included_roots": [
+      "component.json",
+      "package.json",
+      "plugin.json",
+      ".claude-plugin/plugin.json",
+      ".codex-plugin/plugin.json",
+      ".cursor-plugin/plugin.json",
+      ".devin-plugin/plugin.json",
+      ".grok-plugin/plugin.json",
+      ".kimi-plugin/plugin.json",
+      ".opencode/package.json",
+      ".opencode/plugins",
+      ".pi/extensions",
+      "skills"
+    ],
+    "exclusions": [
+      ".git",
+      "node_modules",
+      ".context",
+      "__pycache__",
+      "coverage",
+      "tmp"
+    ],
+    "max_regular_files": 4096,
+    "max_total_bytes": 16777216,
+    "max_per_file_bytes": 2097152,
+    "max_elapsed_ms": 5000,
+    "framing": "path-u32be-content-u64be-v1"
+  }
+}

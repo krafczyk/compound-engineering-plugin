@@ -62,6 +62,11 @@
         },
         {
           "type": "json",
+          "path": "component.json",
+          "jsonpath": "$.component_version"
+        },
+        {
+          "type": "json",
           "path": ".cursor-plugin/plugin.json",
           "jsonpath": "$.version"
         },
