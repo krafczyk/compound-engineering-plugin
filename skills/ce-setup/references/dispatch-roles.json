@@ -267,7 +267,6 @@
 
     "ce-doc-review.local-reviewers": {
       "file": "skills/ce-doc-review/SKILL.md",
-      "source_marker": "document-review.local-reviewers",
       "roles": [
         "ce-doc-review.coherence-reviewer",
         "ce-doc-review.design-lens-reviewer",
