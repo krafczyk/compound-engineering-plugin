@@ -28,7 +28,6 @@ async function fixture(): Promise<string> {
     ".devin-plugin/plugin.json": '{"name":"compound-engineering","version":"3.20.0"}\n',
     ".grok-plugin/plugin.json": '{"name":"compound-engineering","version":"3.20.0"}\n',
     ".kimi-plugin/plugin.json": '{"name":"compound-engineering","version":"3.20.0"}\n',
-    ".opencode/package.json": '{"type":"module"}\n',
     ".opencode/plugins/compound-engineering.js": "export default {}\n",
     ".opencode/plugins/ce-routing-adapter.js": "export {}\n",
     ".opencode/plugins/ce-routing-host.py": "print('ok')\n",

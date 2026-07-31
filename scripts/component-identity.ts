@@ -16,7 +16,6 @@ export const COMPONENT_IDENTITY_PROFILE = {
     ".devin-plugin/plugin.json",
     ".grok-plugin/plugin.json",
     ".kimi-plugin/plugin.json",
-    ".opencode/package.json",
     ".opencode/plugins",
     ".pi/extensions",
     "skills",
