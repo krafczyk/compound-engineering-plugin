@@ -1,6 +1,6 @@
 # OpenCode Spec (Config, Agents, Plugins)
 
-Last verified: 2026-07-27
+Last verified: 2026-07-31
 
 ## Primary sources
 
@@ -81,10 +81,10 @@ https://opencode.ai/config.json
 ## Compound Engineering routed task adapter
 
 - The native CE package registers `ce_task_prepare` and `ce_task` because OpenCode's native Task tool has no per-call model/variant selector. The owning workflow prepares its complete selected wave before mutation. `native` and `opencode` preparation results pass only an opaque session/role/instance-bound handle to each routed task; `external` returns CE Work to its durable external controller instead of generic `ce_task`.
-- The adapter is tested against `@opencode-ai/plugin` and `@opencode-ai/sdk` `1.18.3`. At runtime it preflights observable session, agent, config, model, prompt, abort, and status APIs rather than treating an injected or package version string as server attestation.
+- The adapter is tested against `@opencode-ai/plugin` and `@opencode-ai/sdk` `1.18.9`, including a completed live 92-role dispatch. At runtime it preflights observable session, agent, config, model, prompt, abort, and status APIs rather than treating an injected or package version string as server attestation.
 - It selects the registered `general` agent and mirrors TaskTool permission derivation: parent-session deny and `external_directory` rules survive, the general agent's explicit `task`/`todowrite` rules suppress duplicate defaults, missing recursion denies and `experimental.primary_tools` denies are appended without exact duplicates, and `subagent_depth` is enforced before child creation.
 - Missing or malformed capability data, provider/model, an unadvertised variant, any candidate `route`, or depth exhaustion is unavailable before a child prompt call. A model-less candidate prefers the selected `general` agent's configured model before the parent model.
-- OpenCode `1.18.3` does not expose native Task's prompt-reference expansion through its public SDK. Routed prompts with `@file`, `@directory`, or `@agent`-shaped references fail unavailable before child creation unless a future host exposes that stable capability; the adapter does not hand-expand or silently degrade them.
+- OpenCode `1.18.9` does not expose native Task's `resolvePromptParts` prompt-reference expansion through its public SDK. Routed prompts with `@file`, `@directory`, or `@agent`-shaped references fail unavailable before child creation unless a future host exposes that stable capability; the adapter does not hand-expand or silently degrade them.
 - Serving identity comes only from the assistant response's `providerID`, `modelID`, and `variant`, verified against the concrete preflight provider/model/variant even when configuration used an unqualified model ID. Worker text cannot supply identity.
 - Successful routed tools return OpenCode's built-in Task navigation metadata (`parentSessionId`, `sessionId`, and `model`) alongside the routing receipt so the child remains browseable in the TUI. Routing snapshots, locks, permissions, and prompts remain private.
 - Tool abort is forwarded to the child prompt. Abort, transport failure, and parent deletion remain unknown/in-flight until child abort/status or deletion proves terminality; no second candidate starts from an unproven state.

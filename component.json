@@ -9,7 +9,7 @@
       "target_component": "opencode",
       "contract": {
         "kind": "tested-baseline",
-        "version": "1.18.3",
+        "version": "1.18.9",
         "suffix_policy": "literal"
       }
     }

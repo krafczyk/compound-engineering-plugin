@@ -24,9 +24,9 @@
   "opencode_external_comparison_protocol": "ce-opencode-external-handoff/v1",
   "opencode_external_comparison_fields": ["source_revisions", "bindings"],
   "opencode_external_comparison_requirement": "required-when-public-request-host-is-opencode-and-first-candidate-is-external",
-  "opencode_tested_sdk_version": "1.18.3",
+  "opencode_tested_sdk_version": "1.18.9",
   "opencode_capability_preflight": ["session.get", "app.agents", "config.get", "model.list", "session.create", "session.prompt", "session.abort", "session.status"],
-  "opencode_prompt_reference_capability": "native-resolvePromptParts-not-public-in-sdk-1.18.3",
+  "opencode_prompt_reference_capability": "native-resolvePromptParts-not-public-in-sdk-1.18.9",
   "adapter_outcomes": ["ok", "unavailable", "failed"],
   "task_binding_fields": {
     "profile": ["profile", "policy"],
