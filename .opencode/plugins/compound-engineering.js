@@ -146,9 +146,9 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
   }
   hooks.tool = {
     ce_task_prepare: tool({
-      description: "Freeze one already-selected Compound Engineering OpenCode worker wave and return an opaque host handle.",
+      description: "Freeze one already-selected homogeneous role group for a Compound Engineering OpenCode dispatch and return an opaque host handle.",
       args: {
-        role: tool.schema.string().describe("Stable CE dispatch role shared by the selected wave"),
+        role: tool.schema.string().describe("Fully qualified stable CE dispatch role shared by the group; never a dispatch-site label or bare worker name"),
         instances: tool.schema.array(tool.schema.string()).min(1).describe("Stable selected worker instance IDs"),
       },
       async execute(args, context) {
@@ -197,6 +197,7 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
           description: args.description,
           prompt: args.prompt,
           signal: context.abort,
+          resolvePromptParts: context.resolvePromptParts,
           publishMetadata: typeof context.metadata === "function"
             ? (input) => context.metadata(input)
             : undefined,

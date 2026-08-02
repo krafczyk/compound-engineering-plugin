@@ -476,6 +476,15 @@ describe("dispatch role coverage", () => {
     expect(problems, `invalid routing batch identifiers:\n${problems.join("\n")}`).toEqual([])
   })
 
+  test("OpenCode preparation distinguishes dispatch sites from stable roles", async () => {
+    const reference = await readFile(path.join(repoRoot, "scripts/routing/execution-routing.md"), "utf8")
+
+    expect(reference).toMatch(/fully qualified.*dispatch role/i)
+    expect(reference).toMatch(/(?:site|`ce-dispatch-site`).*not.*role/i)
+    expect(reference).toMatch(/heterogeneous.*group.*role.*`ce_task_prepare`/i)
+    expect(reference).toMatch(/bare.*(?:persona|local).*name.*not.*role/i)
+  })
+
   test("scanner does not exempt a whole file after one marker", () => {
     const source = [
       "<!-- ce-dispatch-site:ce-test.first -->",

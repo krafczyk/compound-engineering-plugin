@@ -338,8 +338,11 @@ function containsPromptReference(prompt) {
 
 async function promptParts(host, prompt, input) {
   if (!containsPromptReference(prompt)) return [{ type: "text", text: prompt }]
-  if (typeof host.resolvePromptParts !== "function") return null
-  const parts = await host.resolvePromptParts({ prompt, directory: input.directory, sessionID: input.sessionID })
+  let parts
+  if (typeof input.resolvePromptParts === "function") parts = await input.resolvePromptParts(prompt)
+  else if (typeof host.resolvePromptParts === "function") {
+    parts = await host.resolvePromptParts({ prompt, directory: input.directory, sessionID: input.sessionID })
+  } else return null
   if (!Array.isArray(parts) || parts.length === 0) return null
   const allowed = new Set(["text", "file", "agent", "subtask"])
   return parts.every((part) => part && typeof part === "object" && allowed.has(part.type))

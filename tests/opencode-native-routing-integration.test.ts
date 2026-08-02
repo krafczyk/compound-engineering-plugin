@@ -112,6 +112,8 @@ describe("native OpenCode routing integration", () => {
       const createPlugin = nativePackage.createCompoundEngineeringPlugin({ createClient: () => firstSdk.client })
       const plugin = await createPlugin({ serverUrl: new URL("http://127.0.0.1:4096"), directory: project })
       expect(plugin.tool?.ce_task).toBeDefined()
+      expect(plugin.tool.ce_task_prepare.description).toMatch(/homogeneous role group/i)
+      expect(plugin.tool.ce_task_prepare.args.role.description).toMatch(/fully qualified.*never.*site/i)
       expect(Object.keys(plugin.tool.ce_task_prepare.args).sort()).toEqual(["instances", "role"])
       expect(Object.keys(plugin.tool.ce_task.args).sort()).toEqual([
         "description", "instance", "prompt", "role", "routing_handle",
@@ -149,7 +151,11 @@ describe("native OpenCode routing integration", () => {
       const configuredPlugin = await nativePackage.createCompoundEngineeringPlugin({
         createClient: () => routedSdk.client,
       })({ serverUrl: new URL("http://127.0.0.1:4096"), directory: project })
-      const prompt = "CE prompt bytes\nremain exactly unchanged."
+      const prompt = "CE prompt bytes\nresolve @general through the native host."
+      const resolvedPromptParts = [
+        { type: "text", text: prompt },
+        { type: "agent", name: "general" },
+      ]
       const abort = new AbortController()
       const metadata: Record<string, any>[] = []
       const prepared = await configuredPlugin.tool.ce_task_prepare.execute({
@@ -171,6 +177,10 @@ describe("native OpenCode routing integration", () => {
         abort: abort.signal,
         ask: async (input: Record<string, any>) => { routedSdk.calls.asks.push(structuredClone(input)) },
         metadata: (input: Record<string, any>) => { metadata.push(structuredClone(input)) },
+        resolvePromptParts: async (template: string) => {
+          expect(template).toBe(prompt)
+          return resolvedPromptParts
+        },
       })
 
       expect(routed.output).toBe("routed worker output")
@@ -220,7 +230,7 @@ describe("native OpenCode routing integration", () => {
         agent: "general",
         model: { providerID: "openai", modelID: "routed-model" },
         variant: "high",
-        parts: [{ type: "text", text: prompt }],
+        parts: resolvedPromptParts,
       })])
       expect(routedSdk.calls.createOptions).toEqual([{ signal: abort.signal }])
       expect(routedSdk.calls.promptOptions).toEqual([{ signal: abort.signal }])

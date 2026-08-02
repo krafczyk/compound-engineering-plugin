@@ -1121,7 +1121,7 @@ describe("OpenCode routed task adapter", () => {
     expect(resolutions).toBe(2)
   })
 
-  test("fails prompt references unavailable unless the host exposes native expansion", async () => {
+  test("fails prompt references unavailable unless the caller exposes native expansion", async () => {
     const candidate = { harness: "opencode", model: "openai/gpt-5.6", effort: "high" }
     const prompt = "Inspect @src/file.ts, @src/directory, and @general before responding."
     const unavailableHost = fakeHost()
@@ -1144,10 +1144,6 @@ describe("OpenCode routed task adapter", () => {
       { type: "file", mime: "text/plain", url: "file:///repo/src/file.ts" },
       { type: "agent", name: "general" },
     ]
-    capableHost.host.resolvePromptParts = async ({ prompt: value }: { prompt: string }) => {
-      expect(value).toBe(prompt)
-      return expanded
-    }
     const capable = createOpenCodeRoutingAdapter({ host: capableHost.host, resolver: fakeResolver(candidate) })
     await capable.execute({
       sessionID: "parent-session",
@@ -1155,6 +1151,10 @@ describe("OpenCode routed task adapter", () => {
       directory: "/repo",
       role: ROLE,
       prompt,
+      resolvePromptParts: async (value: string) => {
+        expect(value).toBe(prompt)
+        return expanded
+      },
     })
     expect(capableHost.calls.prompts[0].parts).toEqual(expanded)
   })
