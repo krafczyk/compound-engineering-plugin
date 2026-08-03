@@ -43,6 +43,7 @@
     "cross_model_peer": { "type": "enum", "values": ["codex", "claude", "grok", "cursor", "composer"], "default": null, "merge": "replace", "nullable": true, "authority": "recipient", "consumers": ["ce-code-review", "ce-doc-review", "ce-pov"], "writers": ["ce-setup"] },
     "work_engine_mode": { "type": "enum", "values": ["off", "prefer", "require"], "default": "off", "merge": "replace", "nullable": true, "authority": "recipient", "consumers": ["ce-work", "lfg"], "writers": ["ce-setup"] },
     "work_engine_preferences": { "type": "list", "items": "execution_candidate", "default": [], "merge": "replace", "nullable": true, "authority": "recipient", "consumers": ["ce-work", "lfg"], "writers": ["ce-setup"] },
+    "fast_review_route": { "type": "fast-review-binding", "default": null, "merge": "replace", "nullable": true, "authority": "recipient", "consumers": ["ce-code-review", "ce-work", "lfg"], "writers": ["ce-setup"] },
     "ce_promote_spiral_optout": { "type": "boolean", "default": null, "merge": "replace", "nullable": true, "authority": "none", "consumers": ["ce-promote"], "writers": ["ce-promote", "ce-setup"] },
     "feedback_sources": { "type": "list", "items": "feedback_source", "default": [], "merge": "replace", "nullable": true, "authority": "standing-action", "consumers": ["ce-sweep"], "writers": ["ce-sweep", "ce-setup"] },
     "sweep_state_path": { "type": "string", "default": "docs/feedback-sweep/state.yml", "merge": "replace", "nullable": true, "authority": "none", "consumers": ["ce-sweep"], "writers": ["ce-sweep", "ce-setup"] },

@@ -57,7 +57,7 @@ Without an explicit pipeline, autonomous runs tend to skip planning, treat revie
 - `/ce-work` runs in return-to-caller mode so the pipeline regains control after implementation; a requested implementation target is carried only across this seam
 - Behavior-changing implementation must return verification evidence from `/ce-work`; if evidence is missing, `lfg` retries `/ce-work` once for evidence completion and then stops blocked rather than shipping blind
 - `/ce-simplify-code` runs before review unless the change is docs-only or trivial
-- `/ce-code-review` reports findings, then `lfg` applies eligible fixes and commits them
+- `/ce-code-review` reports findings, then `lfg` applies eligible fixes and commits them; an optional fast-review binding pre-clears straightforward blockers before a fresh ordinary-route audit
 - Residual review findings are made durable in the PR body or a fallback tracked file
 - `/ce-test-browser` runs in pipeline mode
 - `/ce-commit-push-pr mode:pipeline branding:on` ships remaining changes when a remote exists and explicitly marks the CE provenance
@@ -144,6 +144,14 @@ When the prompt has no stage instruction, `lfg` passes no empty binding for that
 See [Compound Engineering configuration](./configuration.md#execution-routing) for global discovery, precedence, profile syntax, policies, attempt safety, receipts, and host capability limits.
 
 Long external runs remain observable through the `ce-work` return contract: run id, requested and actual identity, unit/job state, activity and elapsed time, checkpoint, verification/commit state, blockers, and recovery path. If `lfg` retries once to reconcile missing verification evidence, it uses the same binding and run id; it does not dispatch implementation or run the shipping tail twice. See [`ce-work`](./ce-work.md#choose-the-implementation-author) for egress disclosure, private run state, detached-worktree containment, transactional fold-in, timeouts, resume/reap/cleanup, fallback, and parallel-wave behavior.
+
+## Phased Review Convergence
+
+If `fast_review_route` is effective, LFG first runs fast review on the complete pinned-base diff, applies eligible findings with its normal implementation-class fixer route, and repeats while fixes make verified material progress. It then always performs a fresh complete-diff authoritative review through ordinary review role/class routing. The configured profile changes reviewers only: it does not add personas, change prompts or permissions, or route fixers through the reviewer profile.
+
+Audit-policy green requires no current P0/P1 blockers, except preference-grade `settled_conflict`, and no unresolved required-route failure; P2/P3 findings still use the existing repair or durable residual path unless active instructions promote them. Productive rounds are uncapped only while fixes clear a blocker or verifiably narrow its failure scope. A fast stall escalates with its evidence; an authoritative stall blocks LFG without prompting or residualizing the blocker. When the setting is absent, `null`, or higher-precedence task routing leaves every selected reviewer ordinary, LFG keeps its existing one-pass review/fix/residual flow and does not add an authoritative pass. If any selected reviewer used the fast binding, LFG still performs the complete ordinary authoritative pass. LFG's progress output identifies fast and authoritative rounds, their route receipts, and each transition, green, escalation, or blocked reason.
+
+See [Phased review convergence](./configuration.md#phased-review-convergence) for the `fast_review_route` shape and precedence.
 
 ---
 

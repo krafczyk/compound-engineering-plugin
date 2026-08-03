@@ -39,7 +39,7 @@ Then apply only the judgment the helper cannot own:
    - **Grouping signals:** shared root cause, affected subsystem, user-facing failure mode, overlapping fix path, dependency ordering, or repeated symptoms of one design choice.
    - **Group shape:** short title, the included stable finding `#`s, one-line context, preferred resolution, and why — when one fix path resolves several findings, name it and say which finding to handle first.
    - **Ordering:** order groups by the highest-severity finding they contain, then by lowest stable `#`. A finding appears in at most one group; leave genuinely unrelated findings ungrouped.
-7. **Collect coverage and advisory assets.** Keep helper drop/suppression counts, union residual risks and testing gaps, and preserve any selected learnings, agent-native, and deployment-verification outputs. Schema drift from `data-migration` is already in the merged finding set.
+7. **Collect coverage and advisory assets.** Keep helper drop/suppression counts, union residual risks and testing gaps, and preserve any selected learnings, agent-native, and deployment-verification outputs. Schema drift from `data-migration` is already in the merged finding set. Collect every unresolved required-route blocker as `blocking_route_failures` with its stable role, review phase, reason, and redacted receipt; a completed policy-authorized fallback is not a blocker. Any non-empty list makes the verdict Not ready even when other reviewers completed.
 
 ### Stage 5b: Validation pass (optional quality gate)
 
@@ -135,7 +135,7 @@ After the final artifact write returns, emit the final response immediately. The
 
 ### JSON output format (`mode:agent` only)
 
-Emit **one raw JSON object** as the primary response — a single bare JSON value, **no markdown code fence**. A leading ```` ```json ```` fence makes the response start with backticks and breaks naive `JSON.parse` consumers, so never wrap it. Also write `review.json` under the resolved `<run-dir>` with the same payload.
+Emit **one raw JSON object** as the primary response — a single bare JSON value, **no markdown code fence**. A leading ```` ```json ```` fence makes the response start with backticks and breaks naive `JSON.parse` consumers, so never wrap it. Also write that same payload to `review.json` under the resolved `<run-dir>`.
 
 `mode:agent` does not apply fixes — the caller does — so there is no `applied_fixes` field; the handoff is `actionable_findings`. Applied work surfaces only in explicitly authorized local-apply markdown runs (Stage 5c/6).
 
@@ -144,6 +144,7 @@ Minimum shape:
 ```json
 {
   "status": "complete",
+  "review_phase": { "requested": "fast-if-configured", "active": true },
   "verdict": "Ready to merge | Ready with fixes | Not ready",
   "scope": {
     "base": "<merge-base sha, pr:NNN marker, or base: ref>",
@@ -155,6 +156,7 @@ Minimum shape:
   "intent": "<2-3 line summary>",
   "intent_confidence": "explicit | inferred | uncertain",
   "reviewers": ["correctness", "security"],
+  "blocking_route_failures": [],
   "findings": [],
   "actionable_findings": [],
   "triage_groups": [],
@@ -171,6 +173,10 @@ Minimum shape:
 }
 ```
 
+For an ordinary `mode:agent` review, always include the stable inactive shape: `"review_phase": { "requested": null, "active": false }`. `requested` is `"fast-if-configured"` only when the private token was accepted; `active` is true when any selected review-class role used the frozen fast binding. This metadata does not change findings, reviewer content, or caller-owned fix decisions.
+
+Every `mode:agent` terminal shape, including `failed`, `skipped`, and `degraded`, includes `review_phase` and `blocking_route_failures`. A required route that did not complete and did not take a policy-authorized fallback appears in that list; generic reviewer unavailability that follows the review skill's existing additive failure semantics does not.
+
 Each object in `findings` uses the merged finding fields: `#`, `title`, `severity`, `file`, `line`, `confidence`, `autofix_class`, `owner`, `requires_verification`, `pre_existing`, `suggested_fix`, `first_evidence`, `why_it_matters`, `evidence`, `reviewers`, `independent_reviewers`. The helper derives `independent_reviewers`; synthesis may preserve or union that list but must not infer it from `reviewers`.
 
 Findings stamped by the Stage 5 step 2 settlement-conflict rule additionally carry an optional `settled_conflict` field naming the conflicting `session-settled:`-labeled KTD (its identifier or name). The field is absent on findings with no settlement conflict; consumers that do not recognize it ignore it.
@@ -179,7 +185,7 @@ Findings stamped by the Stage 5 step 2 settlement-conflict rule additionally car
 
 Each object in `triage_groups` carries `{ "title", "findings": [<stable #s>], "context", "preferred_resolution", "why" }` — the finalized groups from Stage 5 step 6 after Stage 5b step 5 pruning. Every referenced `#` must exist in `findings` (the full set) — **not** necessarily in `actionable_findings`. Groups are a triage **lens over all findings, not an apply queue**: a group (and its `preferred_resolution` ordering) can reference advisory or `human`/`release`-owned findings that the caller must not apply. So a caller batching related fixes by theme must first intersect each group's `findings` with `actionable_findings` and act only on that subset — the apply handoff stays `actionable_findings`, never `triage_groups`. Empty array when `grouping:off` is active or no groups were built.
 
-On failure before review completes, set `"status": "failed"` and `"reason": "<one sentence>"`. When all reviewers fail, use `"status": "degraded"` with a reason. When a PR skip rule fires (closed/merged/trivial), use `"status": "skipped"` with the skip reason. Do not emit markdown tables when `mode:agent` is active.
+On failure before review completes, set `"status": "failed"` and `"reason": "<one sentence>"`. When all reviewers fail, use `"status": "degraded"` with a reason. When a PR skip rule fires (closed/merged/trivial), use `"status": "skipped"` with the skip reason. Include the stable `review_phase` and `blocking_route_failures` fields in each shape. Do not emit markdown tables when `mode:agent` is active.
 
 ## Quality Gates
 

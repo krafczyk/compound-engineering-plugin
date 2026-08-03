@@ -45,6 +45,7 @@ COMPATIBILITY_KEYS = (
     "cross_model_peer",
     "work_engine_mode",
     "work_engine_preferences",
+    "fast_review_route",
 )
 COMPATIBILITY_ROLE_SPECS = {
     "ce-plan.plan-author": ("plan-model", ("plan_model",)),
@@ -867,6 +868,15 @@ def validate_binding(value, schema, setting):
     return {"profile": profile, "policy": value["policy"]}
 
 
+def validate_fast_review_binding(value, schema, setting):
+    if not isinstance(value, dict) or set(value) != {"profile", "policy"}:
+        raise RoutingError("SETTING_INVALID", "{} must be a profile/policy binding".format(setting), setting=setting)
+    profile = validate_token(value["profile"], NAME_TOKEN, "profile")
+    if value["policy"] not in ("prefer", "require"):
+        raise RoutingError("SETTING_INVALID", "{} policy must be prefer or require".format(setting), setting=setting)
+    return {"profile": profile, "policy": value["policy"]}
+
+
 def validate_intent_binding(value, schema):
     if not isinstance(value, dict) or set(value) != {"policy", "candidates"}:
         return validate_binding(value, schema, "intent.binding")
@@ -956,6 +966,8 @@ def validate_value(value, spec, schema, source, setting):
         return validate_token(value, ID_TOKEN, setting)
     if value_type == "profile-name":
         return validate_token(value, NAME_TOKEN, setting)
+    if value_type == "fast-review-binding":
+        return validate_fast_review_binding(value, schema, setting)
     if value_type == "list":
         if not isinstance(value, list):
             raise RoutingError("SETTING_INVALID", "{} must be a list".format(setting), setting=setting)
@@ -1085,6 +1097,13 @@ def merge_settings(global_source, project_source, schema):
     ):
         if isinstance(binding, dict) and binding["profile"] not in profiles:
             raise RoutingError("REFERENCE_UNKNOWN", "unknown routing profile '{}'".format(binding["profile"]), profile=binding["profile"])
+    fast_review_route = effective["fast_review_route"]
+    if fast_review_route is not None and fast_review_route["profile"] not in profiles:
+        raise RoutingError(
+            "REFERENCE_UNKNOWN",
+            "unknown routing profile '{}'".format(fast_review_route["profile"]),
+            profile=fast_review_route["profile"],
+        )
     effective["routing"] = {"profiles": profiles, "classes": classes, "roles": role_bindings}
     provenance["routing"] = {
         "layer": "merged",
@@ -1127,17 +1146,26 @@ def validate_snapshot_compatibility(value, source_revisions, routing_state, sche
         raise RoutingError("CONTEXT_STALE", "parent snapshot compatibility state is malformed", exit_code=4)
     values = value["values"]
     provenance = value["provenance"]
+    legacy_keys = set(COMPATIBILITY_KEYS) - {"fast_review_route"}
     if (
         not isinstance(values, dict)
         or not isinstance(provenance, dict)
-        or set(values) != set(COMPATIBILITY_KEYS)
-        or set(provenance) != set(COMPATIBILITY_KEYS)
+        or set(values) != set(provenance)
+        or set(values) not in (set(COMPATIBILITY_KEYS), legacy_keys)
     ):
         raise RoutingError("CONTEXT_STALE", "parent snapshot compatibility fields are malformed", exit_code=4)
 
     normalized_values = {}
     normalized_provenance = {}
     for key in COMPATIBILITY_KEYS:
+        if key not in values:
+            normalized_values[key] = copy.deepcopy(schema["settings"][key].get("default"))
+            normalized_provenance[key] = {
+                "layer": "builtin",
+                "revision": None,
+                "authority_trusted": False,
+            }
+            continue
         item = provenance[key]
         if not isinstance(item, dict) or set(item) != {"layer", "revision", "authority_trusted"}:
             raise RoutingError("CONTEXT_STALE", "parent snapshot compatibility provenance is malformed", exit_code=4)
@@ -1442,10 +1470,12 @@ def normalize_role_request(role_request):
     instance = role_request.get("instance", {})
     if not isinstance(instance, dict):
         raise RoutingError("REQUEST_INVALID", "role instance metadata must be an object", exit_code=2)
+    if "routing_phase" in instance and instance["routing_phase"] != "fast-review":
+        raise RoutingError("REQUEST_INVALID", "routing_phase must be fast-review", exit_code=2)
     return {"role": role_request["role"], "instance": copy.deepcopy(instance)}
 
 
-def resolved_role(role, class_name, instance, binding, compatibility, reason):
+def resolved_role(role, class_name, instance, binding, compatibility, reason, routing_phase=None):
     result = {
         "role": role,
         "class": class_name,
@@ -1457,6 +1487,8 @@ def resolved_role(role, class_name, instance, binding, compatibility, reason):
         compatibility["applied"] = reason == "applied"
         compatibility["reason"] = reason
         result["compatibility"] = compatibility
+    if routing_phase is not None:
+        result["routing_phase"] = routing_phase
     return result
 
 
@@ -1479,6 +1511,14 @@ def resolve_role(
     class_name = catalog.get("class")
     if class_name not in roles["classes"]:
         raise RoutingError("ROLE_UNCLASSIFIED", "dispatch role lacks a valid class", exit_code=4, role=role)
+    phase_requested = instance.get("routing_phase") == "fast-review"
+    if phase_requested and not (role.startswith("ce-code-review.") and class_name == "review"):
+        raise RoutingError(
+            "REQUEST_INVALID",
+            "fast-review routing_phase applies only to ce-code-review review roles",
+            exit_code=2,
+        )
+    routing_phase = {"requested": "fast-review", "active": False} if phase_requested else None
     compatibility = compatibility_metadata(role, compatibility_state)
     task = intent_binding(intents, role, class_name, schema, host, allow_opencode_intent)
     if task is not None:
@@ -1493,7 +1533,20 @@ def resolve_role(
         )
         if resolved is not None:
             resolved["source"] = source_name
-            return resolved_role(role, class_name, instance, resolved, compatibility, "higher-route")
+            return resolved_role(role, class_name, instance, resolved, compatibility, "higher-route", routing_phase)
+    if phase_requested and compatibility_state["values"]["fast_review_route"] is not None:
+        fast_review_route = compatibility_state["values"]["fast_review_route"]
+        fast_layer = compatibility_state["provenance"]["fast_review_route"]["layer"]
+        resolved = bind_from_layer(
+            fast_review_route,
+            "{}-fast-review".format(fast_layer),
+            role,
+            class_name,
+            routing_state,
+            {"authority_trusted": compatibility_state["provenance"]["fast_review_route"]["authority_trusted"]},
+        )
+        routing_phase["active"] = True
+        return resolved_role(role, class_name, instance, resolved, compatibility, "higher-route", routing_phase)
     global_layer = routing_state["layers"]["global"]
     project_layer = routing_state["layers"]["project"]
     compatibility_spec = COMPATIBILITY_ROLE_SPECS.get(role)
@@ -1522,11 +1575,11 @@ def resolve_role(
                 schema,
             )
             if resolved is not None:
-                return resolved_role(role, class_name, instance, resolved, compatibility, "applied")
+                return resolved_role(role, class_name, instance, resolved, compatibility, "applied", routing_phase)
             continue
         resolved = bind_from_layer(value, source_layer, role, class_name, routing_state, provenance)
         if resolved is not None:
-            return resolved_role(role, class_name, instance, resolved, compatibility, "higher-route")
+            return resolved_role(role, class_name, instance, resolved, compatibility, "higher-route", routing_phase)
     binding = {
         "kind": "ce-default",
         "explicit_reset": False,
@@ -1540,7 +1593,7 @@ def resolve_role(
         "policy": None,
         "candidates": [],
     }
-    return resolved_role(role, class_name, instance, binding, compatibility, "inactive")
+    return resolved_role(role, class_name, instance, binding, compatibility, "inactive", routing_phase)
 
 
 def base_state(request, schema, roles):
@@ -2012,6 +2065,7 @@ def validate_parent_snapshot(value, schema, roles, allow_opencode_intent=False):
     if not isinstance(intents, list) or any(not isinstance(intent, dict) for intent in intents):
         raise RoutingError("CONTEXT_STALE", "parent snapshot intents are malformed", exit_code=4)
     routing_state = validate_snapshot_routing(value["routing"], source_revisions, schema, roles)
+    raw_compatibility = copy.deepcopy(value["compatibility"])
     compatibility = validate_snapshot_compatibility(
         value["compatibility"],
         source_revisions,
@@ -2045,7 +2099,10 @@ def validate_parent_snapshot(value, schema, roles, allow_opencode_intent=False):
         normalized_roles,
         parent_id,
     )
-    expected_id = digest("cesnap-v1", normalized_payload)
+    id_payload = copy.deepcopy(normalized_payload)
+    if set(raw_compatibility.get("values", {})) != set(COMPATIBILITY_KEYS):
+        id_payload["compatibility"] = raw_compatibility
+    expected_id = digest("cesnap-v1", id_payload)
     if not isinstance(value["id"], str) or value["id"] != expected_id:
         raise RoutingError("CONTEXT_STALE", "parent snapshot ID does not match its contents", exit_code=4)
     return {"id": expected_id, **normalized_payload}

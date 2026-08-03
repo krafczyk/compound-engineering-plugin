@@ -114,7 +114,9 @@ describe("native OpenCode routing integration", () => {
       expect(plugin.tool?.ce_task).toBeDefined()
       expect(plugin.tool.ce_task_prepare.description).toMatch(/homogeneous role group/i)
       expect(plugin.tool.ce_task_prepare.args.role.description).toMatch(/fully qualified.*never.*site/i)
-      expect(Object.keys(plugin.tool.ce_task_prepare.args).sort()).toEqual(["instances", "role"])
+      expect(Object.keys(plugin.tool.ce_task_prepare.args).sort()).toEqual(["instances", "role", "routing_phase"])
+      expect(plugin.tool.ce_task_prepare.args.routing_phase.safeParse("fast-review").success).toBe(true)
+      expect(plugin.tool.ce_task_prepare.args.routing_phase.safeParse("authoritative").success).toBe(false)
       expect(Object.keys(plugin.tool.ce_task.args).sort()).toEqual([
         "description", "instance", "prompt", "role", "routing_handle",
       ])

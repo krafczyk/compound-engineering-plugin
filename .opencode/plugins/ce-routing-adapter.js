@@ -357,6 +357,10 @@ function routeError(finalized) {
   return error
 }
 
+function supportsExternalHandoff(role) {
+  return role === "ce-work.implementation-worker" || role === "ce-code-review.adversarial-reviewer"
+}
+
 export function createOpenCodeRoutingAdapter(options) {
   const handles = createOpaqueHandleStore()
   const preparedWaves = createPreparedWaveStore()
@@ -614,12 +618,13 @@ export function createOpenCodeRoutingAdapter(options) {
         preparationClaim: prepared.preparationClaim,
       }
       if (candidate.kind !== "ce-default" && candidate.harness !== "opencode") {
-        if (item.binding.source_layer === "task") {
+        if (item.binding.source_layer === "task" || !supportsExternalHandoff(input.role)) {
           const finalized = await finalize(state, "unavailable", {}, priorAttempts, { phase: "preflight" })
           if (finalized.action === "next_candidate") {
             priorAttempts = finalized.receipt.attempts
             continue
           }
+          if (item.binding.source_layer !== "task") throw routeError(finalized)
           const error = new Error("OpenCode direct task intent cannot dispatch through an external CE Work adapter")
           error.code = "DIRECT_EXTERNAL_UNSUPPORTED"
           error.receipt = finalized.receipt
@@ -763,8 +768,14 @@ export function createOpenCodeRoutingAdapter(options) {
       if (!Array.isArray(input.instances) || input.instances.length === 0 || input.instances.some((id) => typeof id !== "string" || !MODEL_TOKEN.test(id))) {
         throw new Error("OpenCode selected wave requires one or more safe instance IDs")
       }
+      if (input.routingPhase !== undefined && input.routingPhase !== "fast-review") {
+        throw new Error("OpenCode routing_phase must be fast-review")
+      }
       if (new Set(input.instances).size !== input.instances.length) throw new Error("OpenCode selected wave instance IDs must be unique")
-      const roleRequests = input.instances.map((id, ordinal) => ({ role: input.role, instance: { id, ordinal } }))
+      const roleRequests = input.instances.map((id, ordinal) => ({
+        role: input.role,
+        instance: { id, ordinal, ...(input.routingPhase ? { routing_phase: input.routingPhase } : {}) },
+      }))
       const { resolved, rootSnapshotID } = await resolve(input, roleRequests)
       const instances = new Map()
       const preparationKeys = input.instances.map((id) => JSON.stringify([input.sessionID, rootSnapshotID, input.role, id]))
@@ -793,12 +804,17 @@ export function createOpenCodeRoutingAdapter(options) {
             state.item.binding?.source_layer === "task"
             && candidates.some((later) => later.kind === "ce-default" || later.harness === "opencode")
           ) return "opencode"
+          if (!supportsExternalHandoff(input.role)) return "opencode"
           return "external"
         }
         return "opencode"
       }))
       if (kinds.size !== 1) throw new Error("OpenCode selected wave resolved to mixed adapter families")
       const kind = [...kinds][0]
+      const routingPhase = {
+        requested: input.routingPhase ?? null,
+        active: input.routingPhase === "fast-review" && resolved.resolutions.some((item) => item.routing_phase?.active === true),
+      }
       if (kind === "external" && resolved.resolutions.some((item) => item.binding?.source_layer === "task")) {
         throw new Error("OpenCode direct task intent cannot select an external CE Work route; direct-input authority cannot leave the native plugin boundary")
       }
@@ -815,11 +831,12 @@ export function createOpenCodeRoutingAdapter(options) {
           instances: input.instances.length,
           kind,
           comparison,
+          routingPhase,
         }
       }
       const handle = preparedWaves.create({ sessionID: input.sessionID, role: input.role, instances })
       if (resolved.resolutions.some((item) => item.binding?.source_layer === "task")) intents.consume?.(input.sessionID)
-      return { handle, instances: input.instances.length, kind }
+      return { handle, instances: input.instances.length, kind, routingPhase }
     },
     async execute(input) {
       let resolved

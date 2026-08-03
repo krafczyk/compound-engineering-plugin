@@ -46,6 +46,8 @@ const legacyKeys = [
   "sweep_shared_branch",
 ] as const
 
+const fastReviewKey = "fast_review_route"
+
 describe("routing configuration contract", () => {
   test("registers every shipped setting plus generalized routing", async () => {
     const schema = JSON.parse(await readFile(schemaPath, "utf8")) as {
@@ -55,7 +57,7 @@ describe("routing configuration contract", () => {
     }
 
     expect(schema.protocol).toBe("ce-routing/v1")
-    expect(Object.keys(schema.settings).sort()).toEqual([...legacyKeys, "routing"].sort())
+    expect(Object.keys(schema.settings).sort()).toEqual([...legacyKeys, fastReviewKey, "routing"].sort())
 
     for (const key of legacyKeys) {
       expect(schema.settings[key]?.type, `${key} is missing a type`).toBeString()
@@ -69,6 +71,15 @@ describe("routing configuration contract", () => {
     expect(schema.settings.feedback_sources.authority).toBe("standing-action")
     expect(schema.settings.feedback_sources.merge).toBe("replace")
     expect(schema.settings.routing.merge).toBe("routing-merge")
+    expect(schema.settings.fast_review_route).toMatchObject({
+      type: "fast-review-binding",
+      default: null,
+      nullable: true,
+      merge: "replace",
+      authority: "recipient",
+      consumers: ["ce-code-review", "ce-work", "lfg"],
+      writers: ["ce-setup"],
+    })
     expect(schema.structured_types).toHaveProperty("feedback_source")
     expect(schema.structured_types).toHaveProperty("execution_candidate")
     expect(schema.structured_types).toHaveProperty("route_binding")
@@ -84,6 +95,7 @@ describe("routing configuration contract", () => {
       adapter_outcomes: string[]
       finalize_request_fields: string[]
       task_binding_fields: Record<string, string[]>
+      routing_phase_values: string[]
       receipt_fields: string[]
       error_codes: string[]
     }
@@ -114,6 +126,7 @@ describe("routing configuration contract", () => {
       profile: ["profile", "policy"],
       direct: ["policy", "candidates"],
     })
+    expect(protocol.routing_phase_values).toEqual(["fast-review"])
     for (const field of [
       "snapshot_id",
       "binding_digest",
@@ -164,6 +177,8 @@ describe("routing configuration contract", () => {
       expect(template, `${key} is absent from the template`).toMatch(new RegExp(`^# ${key}:`, "m"))
       expect(schema.settings).toHaveProperty(key)
     }
+    expect(template, `${fastReviewKey} is absent from the template`).toMatch(new RegExp(`^# ${fastReviewKey}:`, "m"))
+    expect(schema.settings).toHaveProperty(fastReviewKey)
     expect(template).toContain("routing:")
     expect(template).toContain("ce-default")
   })

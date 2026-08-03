@@ -46,9 +46,33 @@ describe("ce-work review contract", () => {
     expect(shipping).toContain("review-findings-followup.md")
     expect(shipping).toMatch(/review is not fix|3a\. Review|3b\. Apply/i)
     expect(shipping).toContain("mode:agent")
+    expect(shipping).toContain("review_phase:fast-if-configured")
+    expect(shipping).toContain("`references/review-convergence.md`")
+    expect(shipping).toContain("authoritative green")
 
     // Quality checklist references ce-code-review (self-sized), not tiers
     expect(shipping).toContain("Code review: `ce-code-review` ran")
+  })
+
+  test("keeps LFG legacy inline fixes while routing active phased fixes", async () => {
+    const lfg = await readRepoFile("skills/lfg/SKILL.md")
+    const followup = await readRepoFile("skills/lfg/references/review-followup.md")
+
+    expect(lfg).toContain("review_phase:fast-if-configured")
+    expect(lfg).toContain("LFG never prompts")
+    expect(lfg).toContain("authoritative blocker to residual handoff")
+    expect(lfg).toContain("`convergence_enabled: true`")
+    expect(followup).toContain("legacy inline path above remains unchanged")
+    expect(followup).toContain("every fast and authoritative round")
+    expect(followup).toContain("appends route blockers to convergence `blocking_route_failures`")
+    expect(followup).not.toContain("## Step 4")
+    expect(followup).not.toContain("ce-code-review mode:agent")
+    expect(followup).toContain("`lfg.review-fixer`")
+    expect(followup).toContain("<!-- ce-dispatch-site:lfg.review-fix-batches -->")
+
+    const ceWorkFollowup = await readRepoFile("skills/ce-work/references/review-findings-followup.md")
+    expect(ceWorkFollowup).toContain("Append those blockers to convergence `blocking_route_failures`")
+    expect(ceWorkFollowup).toMatch(/stop the phase.*never become residual work/i)
   })
 
   test("delegates commit and PR to dedicated skills", async () => {

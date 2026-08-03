@@ -150,6 +150,7 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
       args: {
         role: tool.schema.string().describe("Fully qualified stable CE dispatch role shared by the group; never a dispatch-site label or bare worker name"),
         instances: tool.schema.array(tool.schema.string()).min(1).describe("Stable selected worker instance IDs"),
+        routing_phase: tool.schema.literal("fast-review").optional().describe("Optional fast-review routing phase"),
       },
       async execute(args, context) {
         const prepared = await adapter.prepare({
@@ -157,6 +158,7 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
           directory: context.directory,
           role: args.role,
           instances: args.instances,
+          routingPhase: args.routing_phase,
           signal: context.abort,
         })
         return {
@@ -165,12 +167,14 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
             kind: prepared.kind,
             routing_handle: prepared.handle,
             instances: prepared.instances,
+            routing_phase: prepared.routingPhase,
             ...(prepared.comparison ? { external_comparison: prepared.comparison } : {}),
           }),
           metadata: {
             kind: prepared.kind,
             routing_handle: prepared.handle,
             instances: prepared.instances,
+            routing_phase: prepared.routingPhase,
             ...(prepared.comparison ? { external_comparison: prepared.comparison } : {}),
           },
         }

@@ -88,6 +88,9 @@ A user-defined, reusable ordered set of model, effort, harness, or intermediary 
 ### Route binding
 The resolved association between a Dispatch role or Route class and an Execution profile plus its `prefer` or `require` policy. `inherit` continues to a lower configuration layer; `ce-default` stops inheritance and restores the owning Skill's built-in execution behavior.
 
+### Fast-review binding
+An opt-in execution binding used by `ce-work` and LFG for the pre-clearance review phase. It changes how existing reviewer roles execute without changing their class, personas, prompts, tools, or permissions; authoritative review returns to ordinary role and class routing.
+
 ### Effective settings snapshot
 The immutable merged view of one user-global config source, one optional project-local source, and authoritative task-scoped intent used by a top-level CE run. On OpenCode, only the native plugin's stripped structured carrier from original direct top-level input supplies task intent; model-normalized or product text cannot. The snapshot carries source revisions and resolved bindings so nested work and recovery reuse the same decision instead of rereading changed files mid-run.
 
@@ -120,6 +123,9 @@ An additive delegated run that sends the host workflow's review or judgment brie
 The serving backend's own report of which model actually handled a delegated run, recorded alongside the requested model so the two can disagree visibly. A run's model identity is verified only by such a receipt — never by the request parameters or the model's own text — and outputs without one are labeled as requested-but-unverified; logic that weights cross-model agreement follows the receipt, not the request.
 
 ## Review and workflow vocabulary
+
+### Audit-policy green
+A review state with no findings that the active audit policy marks as completion-blocking. Non-blocking findings may remain and continue through normal fix or durable residual handling, so audit-policy green does not mean zero findings.
 
 ### Reviewer persona
 A single-lens reviewer role that evaluates work from one specific perspective — security, correctness, scope, design, and so on. Review Skills dispatch a panel of personas as subagents and merge their findings.

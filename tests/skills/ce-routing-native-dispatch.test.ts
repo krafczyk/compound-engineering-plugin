@@ -262,6 +262,7 @@ describe("native routing source contract", () => {
       "ce-compound-refresh.replacement-writer",
       "ce-work.review-fix-batches",
       "ce-work.review-fix-single",
+      "lfg.review-fix-batches",
       "ce-work.figma-design-verification",
     ] as const) {
       const gate = routingGate(site)
@@ -289,6 +290,7 @@ describe("native routing source contract", () => {
       ["ce-resolve-pr-feedback.targeted-fixer", /cannot turn a reply, decline, or `needs-human` verdict into a fixer call/i],
       ["ce-work.native-implementation", /cannot .*create a unit.*make an unsafe wave parallel/i],
       ["ce-work.review-fix-batches", /cannot add a deferred finding, regroup files, or make coupled batches parallel/i],
+      ["lfg.review-fix-batches", /cannot add a finding, weaken LFG's mechanical eligibility bar, or change the batch schedule/i],
       ["ce-work.figma-design-verification", /cannot add Figma verification/i],
     ]
 
@@ -297,6 +299,23 @@ describe("native routing source contract", () => {
 })
 
 describe("nested routing context", () => {
+  test("fast review routing is restricted to selected ce-code-review review roles", () => {
+    const localReviewers = read("skills/ce-code-review/references/dispatch-reviewers.md")
+    const adversarial = read("skills/ce-code-review/references/cross-model-review.md")
+
+    expect(localReviewers).toMatch(/actual review-class roles/i)
+    expect(localReviewers).toContain("`routing_phase: fast-review`")
+    expect(localReviewers).toMatch(/learnings-researcher.*deployment-verification-agent.*ordinary/i)
+    expect(localReviewers).toMatch(/OpenCode.*`ce_task_prepare`.*`routing_phase: "fast-review"`/is)
+    expect(localReviewers).toMatch(/non-OpenCode.*instance metadata.*resolution.*routing_phase/is)
+    expect(localReviewers).toMatch(/one frozen snapshot/i)
+
+    expect(adversarial).toMatch(/OpenCode.*`ce_task_prepare`.*`routing_phase: "fast-review"`/is)
+    expect(adversarial).toMatch(/non-OpenCode.*instance metadata.*resolution.*routing_phase/is)
+    expect(adversarial).toMatch(/requested.*active/i)
+    expect(adversarial).toMatch(/one frozen snapshot/i)
+  })
+
   test("LFG sanitizes, forwards, and reuses the versioned private envelope", () => {
     const lfg = read("skills/lfg/SKILL.md")
     const privateContext = section(lfg, "## Private Routing Context", "## Per-stage routing carriers")

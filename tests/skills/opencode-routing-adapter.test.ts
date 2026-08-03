@@ -765,6 +765,101 @@ describe("OpenCode routed task adapter", () => {
     })).rejects.toThrow(/already prepared or dispatched/i)
   })
 
+  test("transports fast-review preparation privately and reports whether it is active", async () => {
+    const requests: Record<string, any>[] = []
+    const { host, calls } = fakeHost()
+    const adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: async (request) => {
+        requests.push(structuredClone(request))
+        if (request.action === "resolve_batch") {
+          const resolved = batchResolution(request, [{ harness: "opencode", model: "openai/gpt-5.6" }])
+          resolved.resolutions[0].routing_phase = { requested: "fast-review", active: true }
+          return resolved
+        }
+        return { action: "accept", receipt: { identity_status: "verified" } }
+      },
+    })
+
+    const prepared = await adapter.prepare({
+      sessionID: "session",
+      directory: "/repo",
+      role: "ce-code-review.security-reviewer",
+      instances: ["security"],
+      routingPhase: "fast-review",
+    })
+
+    expect(requests[0].roles).toEqual([{
+      role: "ce-code-review.security-reviewer",
+      instance: { id: "security", ordinal: 0, routing_phase: "fast-review" },
+    }])
+    expect(prepared).toMatchObject({
+      kind: "opencode",
+      routingPhase: { requested: "fast-review", active: true },
+    })
+    await adapter.execute({
+      sessionID: "session",
+      routingHandle: prepared.handle,
+      instanceID: "security",
+      directory: "/repo",
+      role: "ce-code-review.security-reviewer",
+      prompt: "review prompt",
+    })
+    expect(calls.prompts).toEqual([expect.objectContaining({
+      parts: [{ type: "text", text: "review prompt" }],
+    })])
+    await expect(adapter.prepare({
+      sessionID: "other",
+      directory: "/repo",
+      role: "ce-code-review.security-reviewer",
+      instances: ["security"],
+      routingPhase: "authoritative",
+    })).rejects.toThrow(/fast-review/i)
+  })
+
+  test("reports a mixed fast and task-overridden wave as active and permits a later review run", async () => {
+    const { host } = fakeHost()
+    const adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: async (request) => {
+        if (request.action === "resolve_batch") {
+          const resolved = batchResolution(request, [{ harness: "opencode", model: "openai/gpt-5.6" }])
+          resolved.resolutions.forEach((item: any, index: number) => {
+            item.routing_phase = { requested: "fast-review", active: index === 0 }
+          })
+          return resolved
+        }
+        return { action: "accept", receipt: { identity_status: "verified" } }
+      },
+    })
+
+    const first = await adapter.prepare({
+      sessionID: "session",
+      directory: "/repo",
+      role: "ce-code-review.correctness-reviewer",
+      instances: ["run-1-correctness", "run-1-second"],
+      routingPhase: "fast-review",
+    })
+    expect(first.routingPhase).toEqual({ requested: "fast-review", active: true })
+    for (const instanceID of ["run-1-correctness", "run-1-second"]) {
+      await adapter.execute({
+        sessionID: "session",
+        routingHandle: first.handle,
+        instanceID,
+        directory: "/repo",
+        role: "ce-code-review.correctness-reviewer",
+        prompt: "review prompt",
+      })
+    }
+
+    await expect(adapter.prepare({
+      sessionID: "session",
+      directory: "/repo",
+      role: "ce-code-review.correctness-reviewer",
+      instances: ["run-2-correctness"],
+    })).resolves.toMatchObject({ routingPhase: { requested: null, active: false } })
+  })
+
   test("rejects duplicate preparation before the original handle is claimed", async () => {
     const adapter = createOpenCodeRoutingAdapter({
       host: fakeHost().host,
@@ -1267,11 +1362,77 @@ describe("OpenCode routed task adapter", () => {
       kind: "external",
       handle: null,
       instances: 1,
+      routingPhase: { requested: null, active: false },
       comparison: {
         protocol: "ce-opencode-external-handoff/v1",
         source_revisions: { global: `cecfg-v1:${"1".repeat(64)}`, project: "cecfg-v1:absent" },
         bindings: [{ instance: "U1", binding_digest: `cebind-v1:${"1".repeat(64)}` }],
       },
+    })
+  })
+
+  test("preflights unsupported external reviewer candidates and honors prefer fallback", async () => {
+    const candidates = [
+      { harness: "codex", model: "gpt-5.6" },
+      { kind: "ce-default" },
+    ]
+    const requests: Record<string, any>[] = []
+    const adapter = createOpenCodeRoutingAdapter({
+      host: fakeHost().host,
+      resolver: async (request) => {
+        requests.push(structuredClone(request))
+        if (request.action === "resolve_batch") {
+          const resolved = batchResolution(request, candidates, "prefer")
+          resolved.resolutions[0].routing_phase = { requested: "fast-review", active: true }
+          return resolved
+        }
+        if (request.attempt_lock.candidate_ordinal === 0) {
+          return { action: "next_candidate", receipt: { attempts: [{ ordinal: 0, adapter_outcome: "unavailable" }] } }
+        }
+        return { action: "accept", receipt: { attempts: [{ ordinal: 0 }, { ordinal: 1 }] } }
+      },
+    })
+    const prepared = await adapter.prepare({
+      sessionID: "review",
+      directory: "/repo",
+      role: "ce-code-review.correctness-reviewer",
+      instances: ["run-1-correctness"],
+      routingPhase: "fast-review",
+    })
+    expect(prepared).toMatchObject({ kind: "opencode", routingPhase: { requested: "fast-review", active: true } })
+
+    await expect(adapter.execute({
+      sessionID: "review",
+      routingHandle: prepared.handle,
+      instanceID: "run-1-correctness",
+      directory: "/repo",
+      role: "ce-code-review.correctness-reviewer",
+      prompt: "review prompt",
+    })).resolves.toMatchObject({ kind: "native", explicit_reset: true })
+    expect(requests.filter((request) => request.action === "finalize_attempt")).toHaveLength(2)
+  })
+
+  test("preserves the dedicated adversarial peer external handoff", async () => {
+    const external = { harness: "codex", model: "gpt-5.6" }
+    const adapter = createOpenCodeRoutingAdapter({
+      host: fakeHost().host,
+      resolver: async (request) => {
+        const resolved = batchResolution(request, [external], "require")
+        resolved.resolutions[0].routing_phase = { requested: "fast-review", active: true }
+        return resolved
+      },
+    })
+    await expect(adapter.prepare({
+      sessionID: "peer",
+      directory: "/repo",
+      role: "ce-code-review.adversarial-reviewer",
+      instances: ["run-1-adversarial-peer"],
+      routingPhase: "fast-review",
+    })).resolves.toMatchObject({
+      kind: "external",
+      handle: null,
+      routingPhase: { requested: "fast-review", active: true },
+      comparison: { protocol: "ce-opencode-external-handoff/v1" },
     })
   })
 

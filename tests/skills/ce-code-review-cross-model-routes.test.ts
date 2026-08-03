@@ -79,6 +79,10 @@ const DOC_SCRIPT = path.join(
   __dirname,
   "../../skills/ce-doc-review/scripts/cross-model-doc-review.sh",
 )
+const VERIFY_OPENCODE_EXTERNAL = path.join(
+  __dirname,
+  "../../skills/ce-code-review/scripts/verify-opencode-external.py",
+)
 
 const ROUTES = ["codex", "claude", "grok-cli", "grok-cursor", "cursor", "composer"] as const
 
@@ -996,5 +1000,78 @@ describe("cross-model-adversarial-review argv integrity", () => {
     expect(prompt).toMatch(/BEGIN DIFF [0-9a-f]+/)
     expect(prompt).toMatch(/END DIFF [0-9a-f]+/)
     expect(prompt).toContain("untrusted diff data")
+  })
+})
+
+describe("OpenCode external peer comparison", () => {
+  test("resolves internally and emits only an exact fast or ordinary host match", () => {
+    const root = mkTempRoot("xmodel-cr-opencode-")
+    const home = path.join(root, "home")
+    const project = path.join(root, "project")
+    mkdirSync(home, { recursive: true })
+    mkdirSync(project, { recursive: true })
+    spawnSync("git", ["init", "-q"], { cwd: project })
+    const expectedPath = path.join(root, "expected.json")
+    const instance = "run-1-adversarial-peer"
+    const configPath = path.join(home, "config.yaml")
+    const config = (model: string) => `routing:\n  profiles:\n    external:\n      candidates:\n        - { harness: codex, model: ${model} }\n  roles:\n    ce-code-review.adversarial-reviewer: { profile: external, policy: require }\nfast_review_route: { profile: external, policy: require }\n`
+    writeFileSync(configPath, config("gpt-5.6"), { mode: 0o600 })
+    const env = { ...process.env, HOME: home, COMPOUND_ENGINEERING_HOME: home }
+    const routingScript = path.join(REPO_ROOT, "skills/ce-code-review/scripts/ce-routing.py")
+    const resolve = (fast: boolean) => {
+      const request = {
+        protocol: "ce-routing/v1",
+        op: "resolve_batch",
+        cwd: project,
+        host: { harness: "opencode", serving_family: "host-reported" },
+        intents: [],
+        roles: [{
+          role: "ce-code-review.adversarial-reviewer",
+          instance: { id: instance, ordinal: 0, ...(fast ? { routing_phase: "fast-review" } : {}) },
+        }],
+      }
+      const result = spawnSync("python3", ["-I", "-S", routingScript], {
+        cwd: project,
+        env,
+        input: JSON.stringify(request),
+        encoding: "utf8",
+      })
+      expect(result.status).toBe(0)
+      return JSON.parse(result.stdout)
+    }
+    const comparison = (resolved: any) => ({
+      protocol: "ce-opencode-external-handoff/v1",
+      source_revisions: resolved.snapshot.source_revisions,
+      bindings: [{ instance, binding_digest: resolved.resolutions[0].binding_digest }],
+    })
+    const verify = (fast: boolean) => spawnSync("python3", [
+      "-I", "-S", VERIFY_OPENCODE_EXTERNAL, expectedPath, project, instance,
+      ...(fast ? ["fast-review"] : []),
+    ], { cwd: project, env, encoding: "utf8" })
+
+    const fastResolved = resolve(true)
+    writeFileSync(expectedPath, JSON.stringify(comparison(fastResolved)))
+    const fastMatched = verify(true)
+    expect(fastMatched.status).toBe(0)
+    expect(JSON.parse(fastMatched.stdout)).toEqual(fastResolved)
+
+    const ordinaryResolved = resolve(false)
+    writeFileSync(expectedPath, JSON.stringify(comparison(ordinaryResolved)))
+    const ordinaryMatched = verify(false)
+    expect(ordinaryMatched.status).toBe(0)
+    expect(JSON.parse(ordinaryMatched.stdout)).toEqual(ordinaryResolved)
+
+    writeFileSync(configPath, config("changed-model"), { mode: 0o600 })
+    const changed = verify(false)
+    expect(changed.status).toBe(4)
+    expect(changed.stderr).toMatch(/source revisions changed/i)
+
+    writeFileSync(configPath, config("gpt-5.6"), { mode: 0o600 })
+    const forged = comparison(ordinaryResolved)
+    forged.bindings[0].binding_digest = `cebind-v1:${"9".repeat(64)}`
+    writeFileSync(expectedPath, JSON.stringify(forged))
+    const tampered = verify(false)
+    expect(tampered.status).toBe(4)
+    expect(tampered.stderr).toMatch(/binding changed/i)
   })
 })

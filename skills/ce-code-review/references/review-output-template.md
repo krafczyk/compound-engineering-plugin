@@ -160,13 +160,14 @@ This fails because of the **box-drawing `────` separators between items*
 
 When `mode:agent` is active, **do not** emit the markdown table report above. Emit **one parseable JSON object** as the primary response and write the same payload to `review.json` under the resolved `<run-dir>`.
 
-The contract is defined in SKILL.md under **`### JSON output format (`mode:agent` only)`**. Minimum fields: `status`, `verdict`, `scope`, `intent`, `reviewers`, `findings`, `actionable_findings`, `artifact_path`, `run_id`.
+The contract is defined in SKILL.md under **`### JSON output format (`mode:agent` only)`**. Minimum fields: `status`, `review_phase`, `blocking_route_failures`, `verdict`, `scope`, `intent`, `reviewers`, `findings`, `actionable_findings`, `artifact_path`, `run_id`.
 
 Key differences from the human-facing markdown format:
 
 - **No pipe-delimited tables** — findings are JSON arrays with merged fields (`#`, `title`, `severity`, `file`, `line`, `confidence`, `autofix_class`, `owner`, `suggested_fix`, `why_it_matters`, `evidence`, `reviewers`, etc.).
 - **`actionable_findings`** — subset for caller apply workflows (`gated_auto` / `manual` with `downstream-resolver`).
 - **`triage_groups`** — the markdown Triage Groups section serialized as `{title, findings: [<stable #s>], context, preferred_resolution, why}` objects, so callers can batch related fixes by theme. Groups span the full finding set — a triage lens, not an apply queue — so a caller must intersect each group's `findings` with `actionable_findings` before applying; the apply handoff stays `actionable_findings`. Empty when `grouping:off` or no groups.
+- **`review_phase`** — `{ "requested": "fast-if-configured" | null, "active": boolean }`; additive private-control outcome for callers, not reviewer content or a fix instruction.
 - **No `applied_fixes` and no Applied section** — `mode:agent` does not apply fixes; the caller does. Applied work surfaces only in explicitly authorized local-apply markdown (Stage 5c/6). The handoff is `actionable_findings`.
-- **Failure/degraded paths** — `{"status":"failed","reason":"..."}` or `"status":"degraded"` with reason; never mix markdown tables into the JSON response.
+- **Skipped/failure/degraded paths** — include `status`, `reason`, the stable parsed `review_phase` shape with `active: false` before routing resolves, and `blocking_route_failures`; never mix markdown tables into the JSON response.
 - **Stable `#`** — same numbering as Stage 5 synthesis, carried in JSON finding objects for downstream apply/residual tracking.

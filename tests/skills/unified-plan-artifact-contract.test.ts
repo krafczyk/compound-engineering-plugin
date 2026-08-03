@@ -209,7 +209,7 @@ describe("unified plan artifact contract", () => {
     expect(lfg).toContain("repeat the original ce-work invocation once without an `implementation_run:` carrier")
     expect(lfg).toContain("A non-native return without a safe run id remains blocked")
     expect(lfg).toContain("stop as blocked and report the missing fields")
-    expect(lfg).toContain("ce-code-review` skill with `mode:agent plan:<plan-path-from-step-1>`")
+    expect(lfg).toContain("ce-code-review` skill with `mode:agent review_phase:fast-if-configured plan:<plan-path-from-step-1> base:<pinned-base>`")
     expect(lfg).not.toContain("artifact_readiness: approach-plan")
   })
 
@@ -623,7 +623,7 @@ describe("session-settled decision contract", () => {
   test("lfg threads settled_conflict findings through both step 4 and step 6", () => {
     const step4 = sliceSection(
       lfg,
-      "4. Invoke the `ce-code-review` skill",
+      "4. Pin the merge base and first invoke the `ce-code-review` skill",
       "5. **Apply and persist review fixes**",
     )
     expect(step4).toContain("`settled_conflict`")

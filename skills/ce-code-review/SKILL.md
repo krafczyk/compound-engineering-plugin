@@ -41,6 +41,7 @@ Parse the arguments you were invoked with for optional tokens. Strip each recogn
 |-------|---------|--------|
 | `mode:agent` | `mode:agent` | **Report-only**: return **JSON** instead of markdown tables and skip the Stage 5c apply (the caller applies). Does not change reviewer selection, merge logic, or scope rules (see Output format) |
 | `mode:headless` | `mode:headless` | **Deprecated alias** for `mode:agent` |
+| `review_phase:fast-if-configured` | `mode:agent review_phase:fast-if-configured` | **Private programmatic control token**: request the configured fast-review route for selected review-class roles. Strip it before feature, scope, intent, or prompt text. |
 | `mode:report-only` | `mode:report-only` | **Deprecated — ignored.** Former no-artifacts mode; default behavior is review-only without checkout |
 | `apply:local` | `apply:local` | Explicitly authorize Stage 5c to apply verified findings to the reviewed local checkout. This is authority, not an output mode; bare review remains report-only. |
 | `base:<sha-or-ref>` | `base:abc1234` or `base:origin/main` | Diff base on the **current checkout** (explicit; skips auto base detection) |
@@ -55,15 +56,18 @@ Parse the arguments you were invoked with for optional tokens. Strip each recogn
 
 **Mode alias:** `mode:headless` normalizes to `mode:agent`. `mode:agent` + `mode:headless` is not a conflict.
 
+`review_phase:fast-if-configured` is valid only with `mode:agent` (including its normalized alias). It is private control state, never review content: do not include it in the feature, scope, intent summary, reviewer persona, peer brief, or any dispatched prompt.
+
 **Conflicting arguments:** Stop without dispatching reviewers when:
 - Multiple incompatible scope selectors appear together (e.g. `base:` **and** a PR number/branch target — `base:` means "review the current checkout against this base")
 - Multiple distinct `mode:` tokens other than the `mode:agent`/`mode:headless` alias pair
 - `apply:local` together with `mode:agent` — pipeline handoffs are always report-only
+- `review_phase:fast-if-configured` with default/human mode or `apply:local` — it conflicts with both paths
 - Multiple distinct `grouping:` tokens (e.g. `grouping:off` **and** `grouping:always`)
 
 Deprecated `mode:autofix` is **not** a conflict — ignore the token and proceed with the normal flow (see below).
 
-Emit a one-line failure reason. In `mode:agent`, return JSON: `{"status":"failed","reason":"..."}`.
+Emit a one-line failure reason. In `mode:agent`, return JSON with `status`, `reason`, the stable `review_phase` shape, and any known `blocking_route_failures`; use `requested: "fast-if-configured"` only when that token was accepted, otherwise `requested: null`, and use `active: false` before reviewer routing resolves.
 
 ## Operating principles
 
@@ -242,7 +246,7 @@ Apply skip rules in order:
 <!-- ce-dispatch-site:ce-code-review.trivial-pr-classifier -->
 - **Trivial-PR judgment**: spawn a lightweight sub-agent on the platform's cheapest capable model when a known override exists; otherwise omit the model override and inherit. Give it the PR title, body, and changed file paths. The agent's task: "Is this an automated or trivial PR that does not warrant a code review? Consider: dependency lock-file or manifest-only bumps, automated release commits, chore version increments with no substantive code changes. When in doubt, answer no — false negatives (skipped reviews that should have run) are more costly than false positives (unnecessary reviews)." If the judgment returns yes: stop with reason `PR appears to be a trivial automated PR; not reviewing. Run without a PR argument to review the current branch, or pass base:<ref> if review is intended.`
 
-When any skip rule fires, stop without dispatching reviewers. **Default mode:** emit the reason as plain text. **`mode:agent`:** emit JSON only — `{"status":"skipped","reason":"<same message>"}` — so programmatic callers can parse the outcome. **Standalone**, **`base:`**, and **branch-remote** paths are unaffected. **Draft PRs are reviewed normally.**
+When any skip rule fires, stop without dispatching reviewers. **Default mode:** emit the reason as plain text. **`mode:agent`:** emit JSON only with `status: "skipped"`, `reason`, the parsed stable `review_phase` shape with `active: false`, and `blocking_route_failures: []` so programmatic callers retain one terminal schema. **Standalone**, **`base:`**, and **branch-remote** paths are unaffected. **Draft PRs are reviewed normally.**
 
 If no skip rule fires, fetch PR metadata **without checkout**:
 

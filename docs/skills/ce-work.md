@@ -91,9 +91,9 @@ When the plan defines U-IDs, they propagate as task prefixes, into commit messag
 
 A task isn't done when the code compiles. Before changing behavior, `ce-work` discovers the existing test files for what's being changed and chooses the right proof: use an existing failing test, update or strengthen the existing test that owns the contract, add a focused failing test, capture characterization coverage, or record a deliberate exception with replacement verification. Before marking a feature-bearing task complete, it checks that test scenarios cover the categories that apply (happy path, edges, error paths, integration), and traces two levels out for callbacks, middleware, and observers the change might affect. Mocking everything proves logic in isolation; integration coverage is what proves the layers actually work together.
 
-### 6. Portable code review with explicit residual handling
+### 6. Portable code review with phased convergence
 
-Every non-mechanical change runs through `ce-code-review`, which selects its own lite or full roster from the diff. Review is read-only; `ce-work` applies eligible fixes afterward, then sends any actionable remainder through a four-option residual gate (apply / file tickets / accept with durable sink / stop). "Accept" requires a real durable record; findings can't live only in the transient session. Harness-native review is only a fallback when the portable reviewer cannot run.
+Every non-mechanical change runs through `ce-code-review`, which selects its own lite or full roster from the diff. Review is read-only and `ce-work` applies eligible fixes through its normal implementation-class fixer route. When `fast_review_route` is configured, selected reviewer roles first pre-clear the complete diff on that profile, then a fresh ordinary-route review converges to audit-policy green. Productive rounds are uncapped only while fixes clear a blocker or verifiably narrow its failure scope; a fast stall escalates, while an authoritative stall blocks with evidence. In configured convergence, P0/P1 findings and unresolved required-route failures cannot enter the Residual Work Gate; non-blocking findings retain its four options (apply / file tickets / accept with durable sink / stop). Without the setting, the existing single review, fix, and residual path is unchanged. "Accept" requires a real durable record; findings can't live only in the transient session. Harness-native review is only a fallback when the portable reviewer cannot run and no required route blocked.
 
 ### 7. Operational validation as a default
 
@@ -296,7 +296,7 @@ Not by themselves. They isolate concurrent Git state and contain accidental muta
 Resuming after context compaction, picking up someone else's branch, or returning to a partly-shipped plan are all common. Idempotency ensures `ce-work` doesn't silently reimplement what's already there.
 
 **What's the Residual Work Gate?**
-When `ce-code-review` surfaces actionable findings the follow-up pass didn't resolve, `ce-work` won't silently ship them. It asks: apply now / file tickets / accept (with durable sink) / stop. "Accept" requires a real durable record — findings can't live only in the session.
+After configured convergence reaches audit-policy green, `ce-work` will not silently ship non-blocking actionable findings its follow-up pass did not resolve. It asks: apply now / file tickets / accept (with durable sink) / stop; P0/P1 blockers must be fixed or stop the workflow. The unconfigured compatibility path retains its existing residual behavior. "Accept" always requires a real durable record.
 
 **Does `ce-work` support non-software plans?**
 For a plan marked `execution: knowledge-work` (produced by `ce-plan`'s approach-altitude flow), yes — a lightweight carve-out reads the sources, synthesizes, and produces the deliverable, skipping the commit/test/PR lifecycle. Other non-software work without that marker still ends at `ce-plan`, and a human executes it.
@@ -309,5 +309,6 @@ For a plan marked `execution: knowledge-work` (produced by `ce-plan`'s approach-
 - [`ce-brainstorm`](./ce-brainstorm.md) — defines what the plan should accomplish
 - [`ce-ideate`](./ce-ideate.md) — upstream "what's worth exploring" discovery
 - [`ce-code-review`](./ce-code-review.md) — portable self-sizing review path
+- [Configuration: phased review convergence](./configuration.md#phased-review-convergence) — opt-in fast-review binding and routing behavior
 - [`ce-commit-push-pr`](./ce-commit-push-pr.md) — handles the final commit + PR flow
 - [`ce-compound`](./ce-compound.md) — capture reusable learning after shipping

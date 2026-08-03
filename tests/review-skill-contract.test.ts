@@ -189,10 +189,33 @@ describe("ce-code-review contract", () => {
     expect(content).toContain("**Conflicting arguments:**")
 
     // Structured failure JSON
-    expect(content).toContain('{"status":"failed","reason":"..."}')
+    expect(content).toMatch(/failure reason.*stable `review_phase` shape.*`blocking_route_failures`/i)
 
     // Deprecated alias preserved
     expect(content).toContain("**Deprecated alias**")
+  })
+
+  test("keeps fast-review phase control private and additive in agent mode", async () => {
+    const skill = await readRepoFile("skills/ce-code-review/SKILL.md")
+    const finish = await readRepoFile("skills/ce-code-review/references/finish-review.md")
+    const template = await readRepoFile(
+      "skills/ce-code-review/references/review-output-template.md",
+    )
+
+    expect(skill).toContain("`review_phase:fast-if-configured`")
+    expect(skill).toMatch(/private programmatic control token/i)
+    expect(skill).toMatch(/strip.*(?:scope|feature|prompt)/i)
+    expect(skill).toMatch(/valid only with `mode:agent`/i)
+    expect(skill).toMatch(/(?:default|human) mode/i)
+    expect(skill).toMatch(/`apply:local`/)
+    expect(skill).toMatch(/conflicts with both paths/i)
+    expect(finish).toContain('"review_phase": { "requested": "fast-if-configured", "active": true }')
+    expect(finish).toContain('"review_phase": { "requested": null, "active": false }')
+    expect(finish).toContain('"blocking_route_failures": []')
+    expect(finish).toMatch(/every `mode:agent` terminal shape.*`review_phase`.*`blocking_route_failures`/i)
+    expect(skill).toMatch(/skip rule.*`mode:agent`.*stable `review_phase` shape.*`blocking_route_failures: \[\]`/is)
+    expect(finish).toMatch(/same payload.*`review\.json`/i)
+    expect(template).toContain("`review_phase`")
   })
 
   test("documents policy-driven routing and actionable handoff", async () => {

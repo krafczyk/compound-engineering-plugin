@@ -1049,6 +1049,143 @@ describe("routing resolver", () => {
     }
   })
 
+  test("applies the frozen fast-review binding only to ce-code-review review roles after task intent", async () => {
+    const f = await fixture()
+    try {
+      const configPath = path.join(f.home, "config.yaml")
+      const writeRouting = async (model: string) => {
+        await writeFile(configPath, `routing:\n  profiles:\n    ordinary:\n      candidates:\n        - { harness: codex, model: ordinary-model }\n    fast:\n      candidates:\n        - { harness: codex, model: ${model} }\n  classes:\n    review: { profile: ordinary, policy: require }\n  roles:\n    ce-code-review.security-reviewer: { profile: ordinary, policy: require }\nfast_review_route: { profile: fast, policy: require }\n`, { mode: 0o600 })
+        await chmod(configPath, 0o600)
+      }
+      await writeRouting("fast-model")
+      const request = {
+        protocol: "ce-routing/v1",
+        op: "resolve_batch",
+        cwd: f.project,
+        host: { harness: "claude", serving_family: "anthropic" },
+        intents: [],
+        roles: [
+          { role: "ce-code-review.security-reviewer", instance: { id: "security", routing_phase: "fast-review" } },
+          { role: "ce-code-review.finding-validator", instance: { id: "validator" } },
+        ],
+      }
+      const parent = await runResolver(request, { cwd: f.project, home: f.home })
+
+      expect(parent.exitCode).toBe(0)
+      expect(parent.body.resolutions[0]).toMatchObject({
+        binding: { profile: "fast", source_layer: "global-fast-review", policy: "require" },
+        routing_phase: { requested: "fast-review", active: true },
+      })
+      expect(parent.body.resolutions[1]).toMatchObject({
+        binding: { kind: "ce-default", source_layer: "builtin" },
+      })
+      expect(parent.body.snapshot.compatibility.values.fast_review_route).toEqual({ profile: "fast", policy: "require" })
+
+      const ordinary = await runResolver({
+        ...request,
+        roles: [{ role: "ce-code-review.security-reviewer", instance: { id: "ordinary-security" } }],
+      }, { cwd: f.project, home: f.home })
+      expect(ordinary.exitCode).toBe(0)
+      expect(ordinary.body.resolutions[0]).toMatchObject({
+        binding: { profile: "ordinary", source_layer: "global-role", policy: "require" },
+      })
+      expect(ordinary.body.resolutions[0].routing_phase).toBeUndefined()
+
+      await mkdir(path.join(f.project, ".compound-engineering"), { recursive: true })
+      await writeFile(path.join(f.project, ".compound-engineering", "config.local.yaml"), `routing:\n  profiles:\n    project-fast:\n      candidates:\n        - { harness: codex, model: project-fast-model }\nfast_review_route: { profile: project-fast, policy: prefer }\n`, { mode: 0o600 })
+      const projectOverride = await runResolver({ ...request, roles: [request.roles[0]] }, { cwd: f.project, home: f.home })
+      expect(projectOverride.exitCode).toBe(0)
+      expect(projectOverride.body.resolutions[0]).toMatchObject({
+        binding: { profile: "project-fast", source_layer: "project-fast-review", policy: "prefer" },
+        routing_phase: { requested: "fast-review", active: true },
+      })
+
+      await writeFile(path.join(f.project, ".compound-engineering", "config.local.yaml"), "fast_review_route: null\n", { mode: 0o600 })
+      const nullOverride = await runResolver({ ...request, roles: [request.roles[0]] }, { cwd: f.project, home: f.home })
+      expect(nullOverride.exitCode).toBe(0)
+      expect(nullOverride.body.resolutions[0]).toMatchObject({
+        binding: { profile: "ordinary", source_layer: "global-role" },
+        routing_phase: { requested: "fast-review", active: false },
+      })
+
+      const taskWins = await runResolver({
+        ...request,
+        intents: [{
+          role: "ce-code-review.security-reviewer",
+          source: "current-task",
+          binding: { profile: "ordinary", policy: "require" },
+        }],
+        roles: [request.roles[0]],
+      }, { cwd: f.project, home: f.home })
+      expect(taskWins.exitCode).toBe(0)
+      expect(taskWins.body.resolutions[0]).toMatchObject({
+        binding: { profile: "ordinary", source_layer: "task" },
+        routing_phase: { requested: "fast-review", active: false },
+      })
+
+      await writeRouting("drifted-fast-model")
+      const child = await runResolver({
+        ...request,
+        parent_snapshot: parent.body.snapshot,
+        parent_snapshot_id: parent.body.snapshot.id,
+        roles: [request.roles[0]],
+      }, { cwd: f.project, home: f.home })
+      expect(child.exitCode).toBe(0)
+      expect(child.body.resolutions[0]).toMatchObject({
+        binding: {
+          candidates: [{ model: "fast-model" }],
+          policy: "require",
+          source_layer: "global-fast-review",
+        },
+        routing_phase: { requested: "fast-review", active: true },
+      })
+      expect(child.body.snapshot.compatibility).toEqual(parent.body.snapshot.compatibility)
+
+      const invalidRole = await runResolver({
+        ...request,
+        roles: [{ role: "ce-code-review.finding-validator", instance: { id: "validator", routing_phase: "fast-review" } }],
+      }, { cwd: f.project, home: f.home })
+      expect(invalidRole.exitCode).toBe(2)
+      expect(invalidRole.body.error.code).toBe("REQUEST_INVALID")
+    } finally {
+      await rm(f.root, { recursive: true, force: true })
+    }
+  })
+
+  test("validates merged fast-review profiles and rejects untrusted project recipients when used", async () => {
+    const f = await fixture()
+    try {
+      const request = {
+        protocol: "ce-routing/v1",
+        op: "resolve_batch",
+        cwd: f.project,
+        roles: [{ role: "ce-code-review.security-reviewer", instance: { id: "security", routing_phase: "fast-review" } }],
+      }
+      await writeFile(path.join(f.home, "config.yaml"), `fast_review_route: { profile: missing, policy: require }\n`, { mode: 0o600 })
+      const unknown = await runResolver(request, { cwd: f.project, home: f.home })
+      expect(unknown.exitCode).toBe(3)
+      expect(unknown.body.error).toMatchObject({ code: "REFERENCE_UNKNOWN", profile: "missing" })
+
+      await writeFile(path.join(f.home, "config.yaml"), `routing:\n  profiles:\n    ordinary:\n      candidates:\n        - { harness: codex, model: ordinary-model }\n  classes:\n    review: { profile: ordinary, policy: require }\n`, { mode: 0o600 })
+      const absent = await runResolver(request, { cwd: f.project, home: f.home })
+      expect(absent.exitCode).toBe(0)
+      expect(absent.body.resolutions[0]).toMatchObject({
+        binding: { profile: "ordinary", source_layer: "global-class" },
+        routing_phase: { requested: "fast-review", active: false },
+      })
+
+      await writeFile(path.join(f.home, "config.yaml"), `routing:\n  profiles:\n    fast:\n      candidates:\n        - { harness: codex, model: fast-model }\n  classes:\n    review: { profile: fast, policy: require }\n`, { mode: 0o600 })
+      await writeFile(path.join(f.project, ".gitignore"), "", { mode: 0o600 })
+      await mkdir(path.join(f.project, ".compound-engineering"), { recursive: true })
+      await writeFile(path.join(f.project, ".compound-engineering", "config.local.yaml"), `fast_review_route: { profile: fast, policy: require }\n`, { mode: 0o600 })
+      const untrusted = await runResolver(request, { cwd: f.project, home: f.home })
+      expect(untrusted.exitCode).toBe(4)
+      expect(untrusted.body.error).toMatchObject({ code: "AUTHORITY_UNTRUSTED" })
+    } finally {
+      await rm(f.root, { recursive: true, force: true })
+    }
+  })
+
   test("authenticates unchanged snapshot envelopes across installed resolver copies", async () => {
     const f = await fixture()
     try {
@@ -1070,6 +1207,35 @@ describe("routing resolver", () => {
           home: f.home,
           resolverPath: path.join(repoRoot, "skills", "ce-work", "scripts", "ce-routing.py"),
         },
+      )
+      expect(finalized.exitCode).toBe(0)
+      expect(finalized.body.action).toBe("accept")
+    } finally {
+      await rm(f.root, { recursive: true, force: true })
+    }
+  })
+
+  test("accepts authenticated snapshots from before fast_review_route was frozen", async () => {
+    const f = await fixture()
+    try {
+      const roleCatalog = JSON.parse(await readFile(path.join(repoRoot, "scripts", "routing", "dispatch-roles.json"), "utf8"))
+      const legacyResolver = await installedResolver(f.root, roleCatalog)
+      const currentSource = await readFile(legacyResolver, "utf8")
+      await writeFile(legacyResolver, currentSource.replace('    "fast_review_route",\n', ""))
+      await writeFile(path.join(f.home, "config.yaml"), `routing:\n  profiles:\n    isolated:\n      candidates:\n        - { harness: codex, model: gpt-5-mini }\n  classes:\n    implementation: { profile: isolated, policy: prefer }\n`, { mode: 0o600 })
+      const parent = await runResolver({
+        protocol: "ce-routing/v1",
+        op: "resolve_batch",
+        cwd: f.project,
+        intents: [],
+        roles: [{ role: "ce-work.implementation-worker", instance: { id: "legacy-state" } }],
+      }, { cwd: f.project, home: f.home, resolverPath: legacyResolver })
+      expect(parent.exitCode).toBe(0)
+      expect(parent.body.snapshot.compatibility.values.fast_review_route).toBeUndefined()
+
+      const finalized = await runResolver(
+        finalizeRequest(parent, 0, "ok", { model_actual: "gpt-5-mini" }),
+        { cwd: f.project, home: f.home },
       )
       expect(finalized.exitCode).toBe(0)
       expect(finalized.body.action).toBe("accept")

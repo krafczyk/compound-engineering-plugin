@@ -90,6 +90,8 @@ This shares the provider/route kernel with `ce-doc-review` (parity-tested in CI)
 
 Generalized routing may also bind the `review` class or individual `ce-code-review.*` roles to execution profiles. It changes only supported model/effort/route selectors and receipts after the skill has selected its roster; it cannot activate a reviewer, alter prompt bytes, grant local apply, or weaken the read-only peer boundary. The merged global/project syntax and host evidence limits are in the [configuration reference](./configuration.md#execution-routing).
 
+`ce-work` and `lfg` can additionally request the private `mode:agent review_phase:fast-if-configured` control. When an effective `fast_review_route` exists, it applies only to the selected review-class roles; it does not affect helpers, validators, research roles, or any fixer. The returned JSON includes additive `review_phase.requested`, `review_phase.active`, and `blocking_route_failures` fields so callers can distinguish fast review from ordinary review and stop on an unresolved required route without exposing routing control in reviewer prompts. A later ordinary `mode:agent` call restores normal role/class routing. Direct users normally do not need this private token.
+
 Large diffs stay on the same single-peer route without being serialized into one enormous prompt. The orchestrator sends a compact semantic review map — intent, material risk divisions, generated-tree treatment, and cross-division interactions — while the worker keeps the exact diff outside the prompt as a private, selectively readable artifact. Deterministic code never invents risk groups or cuts semantic shards; the adversarial agent works within the orchestrator's divisions and narrows its reads again when needed.
 
 ### 2. Severity (P0-P3) and autofix class are orthogonal
@@ -219,6 +221,7 @@ Concurrent use note: bare and `mode:agent` reviews are report-only and safe alon
 | `base:<sha-or-ref>` | Skips scope detection; reviews current checkout against that ref |
 | `plan:<path>` | Loads the plan for requirements verification |
 | `mode:agent` | JSON machine handoff; report-only (the caller applies). `mode:headless` is a deprecated alias; `mode:report-only` is ignored |
+| `review_phase:fast-if-configured` | Private `mode:agent` control for `ce-work`/`lfg`; requests configured fast routing for selected reviewer roles and reports whether it was active |
 | `apply:local` | Explicitly authorize verified local fixes; conflicts with `mode:agent` |
 | `grouping:auto` / `grouping:off` / `grouping:always` | Thematic triage grouping of findings (default `auto`: group when findings span distinct concerns). Presentation only — never changes reviewer selection, merge logic, or apply behavior |
 
@@ -236,6 +239,9 @@ Agent judgment over the actual diff — not keyword matching. Correctness and pr
 
 **What's the difference between default, `mode:agent`, and `apply:local`?**
 Default is a human-facing markdown report and is report-only. `mode:agent` is the same review pipeline serialized as one JSON object for a caller; it is always report-only. `apply:local` is separate authority for the markdown run to apply verified findings locally. `mode:headless` is a deprecated alias for `mode:agent`.
+
+**What is `review_phase` in `mode:agent` output?**
+It is additive caller state: `{ "requested": "fast-if-configured" | null, "active": boolean }`. `active: true` means selected review-class roles used the configured fast-review binding. It never changes the report-only contract, roster, prompts, findings, or fixer routing.
 
 **What's the Residual Work Gate?**
 A caller-owned step (not part of the review skill): in `mode:agent`, the caller (typically `/ce-work`) applies what it can, then presents the findings it didn't apply and asks the user: apply now, file tickets, accept with durable sink, or stop. "Accept" requires a real durable record (Known Residuals in PR description, or `docs/residual-review-findings/<sha>.md`) — findings can't disappear into chat.

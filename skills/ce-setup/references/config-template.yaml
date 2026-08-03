@@ -130,6 +130,7 @@
 #     review: { profile: strong, policy: require }
 #   roles:
 #     ce-code-review.security-reviewer: ce-default
+# fast_review_route: { profile: strong, policy: require }  # optional fast review profile; absent or null disables it
 
 # --- ce-promote ---
 # Written automatically when you decline the Spiral setup offer in /ce-promote.

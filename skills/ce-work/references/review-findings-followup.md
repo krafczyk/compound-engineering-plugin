@@ -6,7 +6,7 @@ Load this reference when `ce-code-review` has finished and **ce-work** (or anoth
 
 ## Consume the completed review (do not re-run it)
 
-This reference loads **after** review has run. In the ce-work shipping flow, step 3a already invoked `ce-code-review`; this apply step **consumes that output** — do not start a second review, which would waste reviewer dispatches and risk overwriting the artifact the Residual Work Gate reconciles.
+This reference loads **after** review has run. In the ce-work shipping flow, step 3a already invoked `ce-code-review`; this apply step **consumes that output**. The convergence caller, not this reference, decides whether a retained fix requires another complete-diff review; do not start one here.
 
 Reuse the review output already in hand:
 
@@ -106,7 +106,7 @@ Otherwise dispatch a subagent — even for a single finding. When unsure, dispat
 
 ### Summary (required)
 
-Report: batches dispatched, `#` applied vs skipped (with reasons from subagents), artifact path, tests run.
+Report: batches dispatched, `#` applied vs skipped (with reasons from subagents), artifact path, retained diff, blocker-directed findings, required-verification result, and any unresolved required-route blockers with their redacted receipts. Append those blockers to convergence `blocking_route_failures`; they stop the phase and never become residual work. This evidence lets the caller distinguish provisional blocker progress from an unrelated or unverified change.
 
 ## Handoff to Residual Work Gate
 

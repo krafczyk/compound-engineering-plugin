@@ -97,6 +97,7 @@
     "ce-work.implementation-worker": { "class": "implementation", "owner": "ce-work", "adapter_family": "write-capable-isolated-implementation", "built_in_tier": "inherit" },
     "ce-work.figma-design-verifier": { "class": "verification", "owner": "ce-work", "adapter_family": "native-generic-subagent", "built_in_tier": "inherit" },
     "ce-work.review-fixer": { "class": "implementation", "owner": "ce-work", "adapter_family": "native-generic-subagent", "built_in_tier": "inherit" },
+    "lfg.review-fixer": { "class": "implementation", "owner": "lfg", "adapter_family": "native-generic-subagent", "built_in_tier": "inherit" },
 
     "ce-optimize.learnings-researcher": { "class": "research", "owner": "ce-optimize", "adapter_family": "native-generic-subagent", "built_in_tier": "inherit" },
     "ce-optimize.repo-research-analyst": { "class": "research", "owner": "ce-optimize", "adapter_family": "native-generic-subagent", "built_in_tier": "inherit" },
@@ -844,6 +845,13 @@
     "ce-work.review-fix-single": {
       "file": "skills/ce-work/references/review-findings-followup.md",
       "roles": ["ce-work.review-fixer"],
+      "adapter_family": "native-generic-subagent",
+      "posture": "write-capable",
+      "built_in_tier": "inherit"
+    },
+    "lfg.review-fix-batches": {
+      "file": "skills/lfg/references/review-followup.md",
+      "roles": ["lfg.review-fixer"],
       "adapter_family": "native-generic-subagent",
       "posture": "write-capable",
       "built_in_tier": "inherit"
