@@ -1392,28 +1392,22 @@ describe("routing resolver", () => {
     }
   })
 
-  test("does not let a hostile PATH forge tracked project config authority", async () => {
+  test("uses a user-owned PATH Git executable for repository inspection", async () => {
     const f = await fixture()
     try {
-      const projectDir = path.join(f.project, ".compound-engineering")
-      const projectPath = path.join(projectDir, "config.local.yaml")
-      const shimDir = path.join(f.root, "hostile-bin")
-      const marker = path.join(f.root, "hostile-git-ran")
-      await writeFile(path.join(f.project, ".gitignore"), "")
-      await mkdir(projectDir, { recursive: true })
-      await writeFile(projectPath, `routing:\n  profiles:\n    forged:\n      candidates:\n        - { harness: codex, model: forged-model }\n  classes:\n    implementation: { profile: forged, policy: require }\n`, { mode: 0o600 })
-      await Bun.$`git add .compound-engineering/config.local.yaml`.cwd(f.project)
+      const shimDir = path.join(f.root, "user-bin")
+      const marker = path.join(f.root, "user-git-ran")
+      const systemGit = Bun.which("git")
+      expect(systemGit).toBeString()
       await mkdir(shimDir)
       const shim = path.join(shimDir, "git")
-      await writeFile(shim, `#!/bin/sh\nprintf hostile > ${JSON.stringify(marker)}\ncase "$*" in\n  *rev-parse*) printf '%s\\n' ${JSON.stringify(f.project)}; exit 0 ;;\n  *check-ignore*) exit 0 ;;\n  *ls-files*) exit 1 ;;\nesac\nexit 1\n`)
+      await writeFile(shim, `#!/bin/sh\nprintf user-owned > ${JSON.stringify(marker)}\nexec ${JSON.stringify(systemGit)} "$@"\n`)
       await chmod(shim, 0o755)
 
       const result = await runResolver({
         protocol: "ce-routing/v1",
-        op: "resolve_batch",
+        op: "inspect",
         cwd: f.project,
-        intents: [],
-        roles: [{ role: "ce-work.implementation-worker" }],
       }, {
         cwd: f.project,
         home: f.home,
@@ -1424,9 +1418,32 @@ describe("routing resolver", () => {
         },
       })
 
+      expect(result.exitCode).toBe(0)
+      expect((await stat(shim)).uid).toBe(process.getuid())
+      expect(await Bun.file(marker).exists()).toBe(true)
+    } finally {
+      await rm(f.root, { recursive: true, force: true })
+    }
+  })
+
+  test("reports an unsupported runtime when PATH has no Git executable", async () => {
+    const f = await fixture()
+    try {
+      const python = Bun.which("python3")
+      expect(python).toBeString()
+      await symlink(python, path.join(f.root, "python3"))
+      const result = await runResolver({
+        protocol: "ce-routing/v1",
+        op: "inspect",
+        cwd: f.project,
+      }, {
+        cwd: f.project,
+        home: f.home,
+        env: { PATH: f.root },
+      })
+
       expect(result.exitCode).toBe(3)
-      expect(result.body.error).toMatchObject({ code: "CONFIG_UNSAFE", reason: "tracked" })
-      expect(await Bun.file(marker).exists()).toBe(false)
+      expect(result.body.error).toMatchObject({ code: "RUNTIME_UNSUPPORTED" })
     } finally {
       await rm(f.root, { recursive: true, force: true })
     }

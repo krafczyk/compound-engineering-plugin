@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -62,7 +63,7 @@ COMPATIBILITY_ROLE_SPECS = {
 }
 O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
-TRUSTED_GIT = None
+GIT_EXECUTABLE = None
 
 
 def transaction_boundary(_name):
@@ -618,44 +619,16 @@ def validate_relative_components(anchor, path):
     return True
 
 
-def trusted_system_executable(name):
-    search = []
+def path_executable(name):
+    candidate = shutil.which(name)
     try:
-        search.extend(os.confstr("CS_PATH").split(os.pathsep))
-    except (AttributeError, OSError, TypeError, ValueError):
+        if candidate and stat.S_ISREG(os.stat(candidate).st_mode) and os.access(candidate, os.X_OK):
+            return candidate
+    except OSError:
         pass
-    search.extend(("/usr/bin", "/bin"))
-    search.extend(os.environ.get("PATH", "").split(os.pathsep))
-    seen = set()
-    for directory in search:
-        if not directory or not os.path.isabs(directory):
-            continue
-        candidate = os.path.realpath(os.path.join(directory, name))
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        try:
-            if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
-                continue
-            current = os.path.sep
-            components = [part for part in candidate.split(os.sep) if part]
-            safe = True
-            for index, component in enumerate(components):
-                current = os.path.join(current, component)
-                st = os.lstat(current)
-                if stat.S_ISLNK(st.st_mode) or st.st_uid != 0 or mode_bits(st) & 0o022:
-                    safe = False
-                    break
-                if index == len(components) - 1 and not stat.S_ISREG(st.st_mode):
-                    safe = False
-                    break
-            if safe:
-                return candidate
-        except OSError:
-            continue
     raise RoutingError(
         "RUNTIME_UNSUPPORTED",
-        "a trusted system Git executable is unavailable",
+        "a Git executable is unavailable from PATH",
     )
 
 
@@ -681,11 +654,11 @@ def sanitized_git_env():
 
 
 def git(repo, *args):
-    global TRUSTED_GIT
-    if TRUSTED_GIT is None:
-        TRUSTED_GIT = trusted_system_executable("git")
+    global GIT_EXECUTABLE
+    if GIT_EXECUTABLE is None:
+        GIT_EXECUTABLE = path_executable("git")
     return subprocess.run(
-        [TRUSTED_GIT, "-C", repo, *args],
+        [GIT_EXECUTABLE, "-C", repo, *args],
         capture_output=True,
         check=False,
         env=sanitized_git_env(),
