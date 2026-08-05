@@ -135,6 +135,11 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
     const commandText = output.parts.find((part) => part.type === "text" && typeof part.text === "string")
     if (commandText) intents.armCommand(sessionID, commandText.text)
   }
+  hooks["shell.env"] = async ({ sessionID }, output) => {
+    if (!sessionID) return
+    const env = adapter.shellEnv(sessionID)
+    if (env) Object.assign(output.env, env)
+  }
   hooks.event = async ({ event }) => {
     const sessionID = event.properties?.info?.id ?? event.properties?.sessionID
     if (typeof sessionID !== "string") return
@@ -241,6 +246,14 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
   return hooks
 }
 
+/**
+ * Creates the Compound Engineering OpenCode plugin initializer.
+ *
+ * @param {object} [options] Plugin dependency overrides.
+ * @param {Function} [options.createClient] SDK client factory used for host operations.
+ * @returns {Function} An async OpenCode plugin initializer that returns CE tools and lifecycle hooks.
+ * @throws {Error} When plugin initialization or a delegated host operation fails.
+ */
 export function createCompoundEngineeringPlugin({ createClient = createOpencodeClient } = {}) {
   return (input) => compoundEngineeringPlugin(input, createClient)
 }

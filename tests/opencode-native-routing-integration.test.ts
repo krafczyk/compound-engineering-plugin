@@ -156,6 +156,19 @@ describe("native OpenCode routing integration", () => {
         { type: "text", text: prompt },
         { type: "agent", name: "general" },
       ]
+      expect(configuredPlugin["shell.env"]).toBeDefined()
+      const parentShell = { env: { PRESERVE: "yes" } }
+      await configuredPlugin["shell.env"]?.({ cwd: project, sessionID: "configured-session" }, parentShell)
+      expect(parentShell.env).toEqual({ PRESERVE: "yes" })
+      const originalPrompt = routedSdk.client.session.prompt
+      routedSdk.client.session.prompt = async (input: Record<string, any>, options: Record<string, any>) => {
+        const shell = { env: {} as Record<string, string> }
+        await configuredPlugin["shell.env"]?.({ cwd: project, sessionID: input.sessionID }, shell)
+        expect(shell.env.TMPDIR).toMatch(/^.*ce-opencode-task-/)
+        expect(shell.env.TMP).toBe(shell.env.TMPDIR)
+        expect(shell.env.TEMP).toBe(shell.env.TMPDIR)
+        return originalPrompt(input, options)
+      }
       const abort = new AbortController()
       const metadata: Record<string, any>[] = []
       const prepared = await configuredPlugin.tool.ce_task_prepare.execute({
@@ -223,6 +236,11 @@ describe("native OpenCode routing integration", () => {
           { permission: "task", pattern: "*", action: "deny" },
           { permission: "primary_only", pattern: "*", action: "deny" },
           { permission: "bash", pattern: "*", action: "deny" },
+          {
+            permission: "external_directory",
+            pattern: expect.stringMatching(/ce-opencode-task-[^/]+\/\*$/),
+            action: "allow",
+          },
         ],
       })])
       expect(routedSdk.calls.prompts).toEqual([expect.objectContaining({

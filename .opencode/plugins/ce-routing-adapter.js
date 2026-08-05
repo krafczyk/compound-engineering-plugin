@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "crypto"
 import { spawn } from "child_process"
+import { chmod, mkdtemp, rm } from "fs/promises"
+import os from "os"
 import path from "path"
 import { fileURLToPath } from "url"
 
@@ -10,6 +12,29 @@ const MODEL_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const EFFORT_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const HARNESSES = new Set(["claude", "opencode", "codex", "cursor", "grok", "composer", "pi", "antigravity"])
 const HOST_WRAPPER = path.join(path.dirname(fileURLToPath(import.meta.url)), "ce-routing-host.py")
+const TASK_TEMP_PREFIX = "ce-opencode-task-"
+
+async function removeTaskTempRoot(root, activeRoots) {
+  if (!activeRoots.delete(root)) return false
+  try {
+    await rm(root, { recursive: true, force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function createTaskTempRoot(tempRoot, activeRoots) {
+  const root = await mkdtemp(path.join(tempRoot, TASK_TEMP_PREFIX))
+  try {
+    await chmod(root, 0o700)
+    activeRoots.add(root)
+    return root
+  } catch (error) {
+    await rm(root, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
+}
 
 function ownKeys(value, keys) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -357,12 +382,28 @@ function routeError(finalized) {
   return error
 }
 
+/**
+ * Creates the native OpenCode adapter that resolves and executes CE child tasks.
+ * Routed children receive an adapter-owned private shell temp root that is removed
+ * after terminal completion; uncertain in-flight failures retain it for safety.
+ *
+ * @param {object} options Adapter dependencies and optional overrides.
+ * @param {object} options.host OpenCode session, model, agent, and prompt operations.
+ * @param {(request: object, context: object) => Promise<object>} options.resolver Routing resolver operation.
+ * @param {object} [options.intents] Session intent store; a default store is created when omitted.
+ * @param {string} [options.tempRoot] Existing directory beneath which private task roots are created.
+ * @returns {object} The routing, lifecycle, intent, and shell-environment operations.
+ * @throws {Error} When routing, child creation, execution, or terminal-state verification fails.
+ */
 export function createOpenCodeRoutingAdapter(options) {
   const handles = createOpaqueHandleStore()
   const preparedWaves = createPreparedWaveStore()
   const intents = options.intents ?? createOpenCodeIntentStore()
+  const tempRoot = typeof options.tempRoot === "string" ? options.tempRoot : os.tmpdir()
   const roots = new Map()
   const activeChildren = new Map()
+  const childTaskRoots = new Map()
+  const activeTaskRoots = new Set()
   const activeClaims = new Map()
   const closingSessions = new Set()
   const closingChildren = new Set()
@@ -378,9 +419,12 @@ export function createOpenCodeRoutingAdapter(options) {
       if (value.sessionID === sessionID) preparationStates.delete(key)
     }
   }
-  const forgetChild = (childID) => {
+  const forgetChild = async (childID, { keepClosing = false } = {}) => {
+    const taskRoot = childTaskRoots.get(childID)
+    childTaskRoots.delete(childID)
     activeChildren.delete(childID)
-    closingChildren.delete(childID)
+    if (!keepClosing) closingChildren.delete(childID)
+    if (taskRoot) await removeTaskTempRoot(taskRoot, activeTaskRoots)
   }
 
   async function resolve(input, roleRequests) {
@@ -452,6 +496,10 @@ export function createOpenCodeRoutingAdapter(options) {
     try {
       await options.host.abortSession({ directory: state.directory, sessionID: childID })
     } catch {}
+    return childTerminal(childID, state)
+  }
+
+  async function childTerminal(childID, state) {
     try {
       const statuses = await options.host.sessionStatus({ directory: state.directory })
       return !statuses?.[childID] || statuses[childID].type === "idle"
@@ -464,12 +512,14 @@ export function createOpenCodeRoutingAdapter(options) {
     const state = handles.take(handle, expected)
     let response
     let child
+    let taskRoot
     let creationStarted = false
     let terminalOutcome = null
     if (closingSessions.has(state.sessionID) || state.epoch !== currentEpoch(state.sessionID)) {
       return { finalized: await finalize(state, "unavailable", {}, priorAttempts, { phase: "preflight" }) }
     }
     try {
+      taskRoot = await createTaskTempRoot(tempRoot, activeTaskRoots)
       state.preparationClaim?.poison()
       creationStarted = true
       child = await options.host.createSession({
@@ -482,7 +532,14 @@ export function createOpenCodeRoutingAdapter(options) {
           id: state.selector.modelID,
           ...(state.selector.variant ? { variant: state.selector.variant } : {}),
         },
-        permission: state.permission,
+        permission: [
+          ...state.permission,
+          {
+            permission: "external_directory",
+            pattern: path.join(taskRoot, "*").replaceAll("\\", "/"),
+            action: "allow",
+          },
+        ],
         signal: state.signal,
       })
       activeChildren.set(child.id, {
@@ -490,6 +547,7 @@ export function createOpenCodeRoutingAdapter(options) {
         directory: state.directory,
         preparationClaim: state.preparationClaim,
       })
+      childTaskRoots.set(child.id, taskRoot)
       state.publishMetadata?.({
         title: state.description,
         metadata: {
@@ -504,7 +562,7 @@ export function createOpenCodeRoutingAdapter(options) {
           unknown.inFlight = true
           throw unknown
         }
-        forgetChild(child.id)
+        await forgetChild(child.id)
         terminalOutcome = "failed"
       } else {
         response = await options.host.prompt({
@@ -523,15 +581,16 @@ export function createOpenCodeRoutingAdapter(options) {
             unknown.inFlight = true
             throw unknown
           }
-          forgetChild(child.id)
+          await forgetChild(child.id)
           terminalOutcome = "failed"
         } else {
-          forgetChild(child.id)
+          await forgetChild(child.id)
           if (response?.info?.error) terminalOutcome = "failed"
         }
       }
     } catch (error) {
       if (!child) {
+        if (taskRoot) await removeTaskTempRoot(taskRoot, activeTaskRoots)
         return {
           finalized: await finalize(
             state,
@@ -548,7 +607,7 @@ export function createOpenCodeRoutingAdapter(options) {
         unknown.inFlight = true
         throw unknown
       }
-      forgetChild(child.id)
+      await forgetChild(child.id)
       return { finalized: await finalize(state, "failed", {}, priorAttempts) }
     }
     if (terminalOutcome) return { finalized: await finalize(state, terminalOutcome, {}, priorAttempts) }
@@ -560,7 +619,7 @@ export function createOpenCodeRoutingAdapter(options) {
         unknown.inFlight = true
         throw unknown
       }
-      forgetChild(child.id)
+      await forgetChild(child.id)
       const closing = new Error("OpenCode routed child closed before its output could be accepted")
       closing.receipt = finalized.receipt
       throw closing
@@ -716,7 +775,7 @@ export function createOpenCodeRoutingAdapter(options) {
       if (state.parentID !== sessionID) continue
       if (await childStopped(childID, state)) {
         state.preparationClaim?.complete()
-        forgetChild(childID)
+        await forgetChild(childID)
       } else confirmed = false
     }
     if ([...activeClaims.values()].some((value) => value.sessionID === sessionID)) confirmed = false
@@ -727,6 +786,10 @@ export function createOpenCodeRoutingAdapter(options) {
 
   return {
     intents,
+    shellEnv(sessionID) {
+      const taskRoot = childTaskRoots.get(sessionID)
+      return taskRoot ? { TMPDIR: taskRoot, TMP: taskRoot, TEMP: taskRoot } : undefined
+    },
     noteSessionDeleted(sessionID) {
       const active = activeChildren.get(sessionID)
       if (active) {
@@ -742,14 +805,14 @@ export function createOpenCodeRoutingAdapter(options) {
       if (!active) return releaseSession(sessionID)
       if (!await childStopped(sessionID, active)) return false
       active.preparationClaim?.complete()
-      activeChildren.delete(sessionID)
+      await forgetChild(sessionID, { keepClosing: true })
       return true
     },
     async releaseCompletedSession(sessionID) {
       const active = activeChildren.get(sessionID)
       if (active) {
         active.preparationClaim?.complete()
-        forgetChild(sessionID)
+        await forgetChild(sessionID)
         return true
       }
       if ([...activeChildren.values()].some((value) => value.parentID === sessionID)) return false

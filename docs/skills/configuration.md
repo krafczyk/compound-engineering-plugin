@@ -134,6 +134,8 @@ Compatibility `prefer` synthesizes its historically shipped built-in fallback ex
 | Hosts without a usable selector | Deterministic policy marks the candidate unavailable; `prefer` advances only as declared and `require` blocks. | Routing never emulates a selector with prompt text or a typed-agent substitution. |
 | External CLI routes | Adapter tests pin fixed recipients, least-privilege flags, identity parsing, credential minimization, and terminal-state handling. | Installed CLI version, authentication, provider availability, and trustworthy live receipts are opt-in environment evidence. Default tests make no live-provider claim. |
 
+Native OpenCode gives each configured routed child a private per-task shell temp root through `TMPDIR`, `TMP`, and `TEMP`, plus permission for that exact root. The adapter removes roots after a successful prompt return, a terminal failure or abort, and child idle or deletion events. It retains a root when child status remains unknown; abrupt OpenCode process termination can therefore leave residue, and one process never sweeps roots that may still belong to another.
+
 Native subagent support is also host-specific. Where an owning skill already has an inline or serial degradation path, `ce-default` preserves it; routing does not invent one. Treat any unrun live OpenCode, Claude Code, Codex, Cursor, Grok, Composer, Pi, or Antigravity selector/receipt check as an explicit evidence gap rather than inferring support from config syntax.
 
 ## Local writer ownership

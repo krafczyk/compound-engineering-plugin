@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "fs/promises"
+import { lstat, mkdir, mkdtemp, rm, utimes, writeFile } from "fs/promises"
 import os from "os"
 import path from "path"
 import { spawn } from "child_process"
@@ -200,6 +200,199 @@ function fakeHost(options: {
 }
 
 describe("OpenCode routed task adapter", () => {
+  test("gives routed children a private shell root and removes it after success", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ce-opencode-task-test-"))
+    const { host } = fakeHost()
+    host.sessionStatus = async () => { throw new Error("status update not visible yet") }
+    let adapter: ReturnType<typeof createOpenCodeRoutingAdapter>
+    let childRoot = ""
+    host.prompt = async (input: Record<string, any>) => {
+      const env = adapter.shellEnv(input.sessionID)
+      expect(env).toEqual({
+        TMPDIR: expect.any(String),
+        TMP: expect.any(String),
+        TEMP: expect.any(String),
+      })
+      expect(env?.TMP).toBe(env?.TMPDIR)
+      expect(env?.TEMP).toBe(env?.TMPDIR)
+      childRoot = env!.TMPDIR
+      const metadata = await lstat(childRoot)
+      expect(metadata.isDirectory()).toBe(true)
+      expect(metadata.mode & 0o777).toBe(0o700)
+      return {
+        info: { role: "assistant", providerID: "openai", modelID: "gpt-5.6" },
+        parts: [{ type: "text", text: "worker output" }],
+      }
+    }
+    adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }),
+      tempRoot,
+    })
+    try {
+      await adapter.execute({
+        sessionID: "parent-session",
+        callID: "call-1",
+        directory: "/repo",
+        role: ROLE,
+        prompt: "prompt",
+      })
+      expect(childRoot).toMatch(new RegExp(`^${tempRoot}/ce-opencode-task-`))
+      await expect(lstat(childRoot)).rejects.toThrow()
+      expect(adapter.shellEnv("parent-session")).toBeUndefined()
+      expect(adapter.shellEnv("unrelated-session")).toBeUndefined()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("retains a routed child root until terminal status is known", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ce-opencode-task-test-"))
+    const { host } = fakeHost()
+    let adapter: ReturnType<typeof createOpenCodeRoutingAdapter>
+    let childRoot = ""
+    host.prompt = async (input: Record<string, any>) => {
+      childRoot = adapter.shellEnv(input.sessionID)!.TMPDIR
+      throw new Error("connection lost")
+    }
+    host.sessionStatus = async () => ({ "child-session": { type: "busy" } })
+    adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }),
+      tempRoot,
+    })
+    try {
+      await expect(adapter.execute({
+        sessionID: "parent-session",
+        callID: "call-1",
+        directory: "/repo",
+        role: ROLE,
+        prompt: "prompt",
+      })).rejects.toThrow(/in flight/i)
+      expect((await lstat(childRoot)).isDirectory()).toBe(true)
+      expect(adapter.shellEnv("child-session")?.TMPDIR).toBe(childRoot)
+
+      host.sessionStatus = async () => ({})
+      expect(await adapter.releaseSession("parent-session")).toBe(true)
+      await expect(lstat(childRoot)).rejects.toThrow()
+      expect(adapter.shellEnv("child-session")).toBeUndefined()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("keeps concurrent routed child roots isolated until each child completes", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ce-opencode-task-test-"))
+    const { host, calls } = fakeHost()
+    const pending: Array<(value: Record<string, any>) => void> = []
+    let nextChild = 0
+    host.createSession = async (input: Record<string, any>) => {
+      calls.creates.push(input)
+      nextChild += 1
+      return { id: `child-${nextChild}` }
+    }
+    host.prompt = async (input: Record<string, any>) => {
+      calls.prompts.push(input)
+      return new Promise((resolve) => { pending.push(resolve) })
+    }
+    host.sessionStatus = async () => ({
+      "child-1": { type: "idle" },
+      "child-2": { type: "idle" },
+    })
+    const adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }),
+      tempRoot,
+    })
+    const input = {
+      sessionID: "parent-session",
+      directory: "/repo",
+      role: ROLE,
+      prompt: "prompt",
+    }
+    try {
+      const first = adapter.execute({ ...input, callID: "call-1" })
+      while (calls.prompts.length < 1) await Bun.sleep(1)
+      const firstRoot = adapter.shellEnv("child-1")!.TMPDIR
+
+      const second = adapter.execute({ ...input, callID: "call-2" })
+      while (calls.prompts.length < 2) await Bun.sleep(1)
+      const secondRoot = adapter.shellEnv("child-2")!.TMPDIR
+      expect(secondRoot).not.toBe(firstRoot)
+      expect((await lstat(firstRoot)).isDirectory()).toBe(true)
+
+      pending.shift()!({ info: { role: "assistant", providerID: "openai", modelID: "gpt-5.6" }, parts: [] })
+      await first
+      await expect(lstat(firstRoot)).rejects.toThrow()
+      expect((await lstat(secondRoot)).isDirectory()).toBe(true)
+
+      pending.shift()!({ info: { role: "assistant", providerID: "openai", modelID: "gpt-5.6" }, parts: [] })
+      await second
+      await expect(lstat(secondRoot)).rejects.toThrow()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("removes a routed child root after its deletion is confirmed terminal", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ce-opencode-task-test-"))
+    const { host, calls } = fakeHost()
+    let releasePrompt: (value: Record<string, any>) => void
+    host.prompt = async () => new Promise((resolve) => { releasePrompt = resolve })
+    const adapter = createOpenCodeRoutingAdapter({
+      host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }),
+      tempRoot,
+    })
+    try {
+      const execution = adapter.execute({
+        sessionID: "parent-session",
+        callID: "call-1",
+        directory: "/repo",
+        role: ROLE,
+        prompt: "prompt",
+      })
+      while (calls.creates.length === 0) await Bun.sleep(1)
+      const childRoot = adapter.shellEnv("child-session")!.TMPDIR
+      adapter.noteSessionDeleted("child-session")
+      expect(await adapter.releaseDeletedSession("child-session")).toBe(true)
+      await expect(lstat(childRoot)).rejects.toThrow()
+      releasePrompt!({ info: { role: "assistant", providerID: "openai", modelID: "gpt-5.6" }, parts: [] })
+      await expect(execution).rejects.toThrow(/ATTEMPT_FAILED/)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("does not sweep routed-task roots owned by another adapter process", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ce-opencode-task-test-"))
+    const existingRoot = path.join(tempRoot, "ce-opencode-task-existing")
+    const old = new Date(Date.now() - 25 * 60 * 60 * 1_000)
+    await mkdir(existingRoot, { mode: 0o700 })
+    await writeFile(path.join(existingRoot, ".ce-opencode-task-root.json"), JSON.stringify({
+      protocol: "ce-opencode-task-root/v1",
+      root: existingRoot,
+    }), { mode: 0o600 })
+    await utimes(existingRoot, old, old)
+    const adapter = createOpenCodeRoutingAdapter({
+      host: fakeHost().host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }),
+      tempRoot,
+    })
+    try {
+      await adapter.execute({
+        sessionID: "parent-session",
+        callID: "call-1",
+        directory: "/repo",
+        role: ROLE,
+        prompt: "prompt",
+      })
+      expect((await lstat(existingRoot)).isDirectory()).toBe(true)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   test("applies selectors and derives the exact OpenCode TaskTool general-agent permissions", async () => {
     const candidate = { harness: "opencode", model: "openai/gpt-5.6", effort: "high" }
     const { host, calls } = fakeHost()
@@ -230,6 +423,11 @@ describe("OpenCode routed task adapter", () => {
         { permission: "task", pattern: "*", action: "deny" },
         { permission: "primary_only", pattern: "*", action: "deny" },
         { permission: "bash", pattern: "*", action: "deny" },
+        {
+          permission: "external_directory",
+          pattern: expect.stringMatching(/ce-opencode-task-[^/]+\/\*$/),
+          action: "allow",
+        },
       ],
     })])
     expect(calls.prompts).toEqual([expect.objectContaining({
@@ -956,7 +1154,9 @@ describe("OpenCode routed task adapter", () => {
       prompt: "prompt",
     })
     while (calls.creates.length === 0) await Bun.sleep(1)
+    const childRoot = adapter.shellEnv("child-session")!.TMPDIR
     expect(await adapter.releaseCompletedSession("child-session")).toBe(true)
+    await expect(lstat(childRoot)).rejects.toThrow()
     expect(await adapter.releaseCompletedSession("session")).toBe(false)
     releasePrompt!({ info: { role: "assistant", providerID: "openai", modelID: "gpt-5.6" }, parts: [] })
     await execution
