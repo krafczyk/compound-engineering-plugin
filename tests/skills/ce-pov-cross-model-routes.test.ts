@@ -123,6 +123,8 @@ describe("ce-pov cross-model route safety", () => {
     }
     expect(emit("codex")).toContain("-s read-only")
     expect(emit("codex")).toContain("-C <peer-workdir>")
+    expect(emit("codex")).toContain("-m gpt-6-astra")
+    expect(emit("codex")).toContain('model_reasoning_effort="high"')
     expect(emit("claude")).toContain("--permission-mode dontAsk")
     expect(emit("claude")).toContain("--safe-mode")
     expect(emit("claude")).toContain("--disable-slash-commands")
@@ -368,6 +370,8 @@ printf '%s' '${response}' > "$out"
     expect(childEnv).not.toContain("OPENAI_API_KEY=")
     expect(childEnv).not.toContain(credential)
     const out = JSON.parse(readFileSync(path.join(dir, "pov-codex.json"), "utf8"))
+    expect(out.model_requested).toBe("gpt-6-astra")
+    expect(out.effort_requested).toBe("high")
     expect(out.model_actual).toBe("unverified")
     expect(out.serving_family).toBe("unknown")
     expect(out.independence_verified).toBe(false)

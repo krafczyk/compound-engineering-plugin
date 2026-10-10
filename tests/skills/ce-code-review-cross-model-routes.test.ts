@@ -362,7 +362,7 @@ printf '%s' '{"structured_output":{"reviewer":"adversarial","findings":[],"resid
     expect(cmd).toContain("-s read-only")
     expect(cmd).toContain("--skip-git-repo-check")
     expect(cmd).toContain('model_reasoning_effort="xhigh"')
-    expect(cmd).toContain("gpt-5.6-luna")
+    expect(cmd).toContain("gpt-6-luna")
     expect(cmd).toContain("-C <repo-root>")
   })
 
@@ -828,7 +828,7 @@ printf '%s' '{"structured_output":{"reviewer":"adversarial","findings":[]},"mode
       readFileSync(path.join(runDir, "adversarial-codex.json"), "utf8"),
     )
     expect(out.cross_model_route).toBe("codex")
-    expect(out.model_requested).toBe("gpt-5.6-luna")
+    expect(out.model_requested).toBe("gpt-6-luna")
     expect(out.model_actual).toBe("unverified")
   }, 20_000) // the codex liveness poll sleeps in 5s slices even for a fast stub
 
@@ -930,8 +930,8 @@ describe("cross-model-adversarial-review fixed-recipient dispatch", () => {
 
 describe("cross-model provider kernel parity (code-review vs doc-review)", () => {
   test("model IDs match across both skills' --emit-adapter output", () => {
-    expect(emitAdapter("codex")).toContain("gpt-5.6-luna")
-    expect(emitAdapter("codex", DOC_SCRIPT)).toContain("gpt-5.6-luna")
+    expect(emitAdapter("codex")).toContain("gpt-6-luna")
+    expect(emitAdapter("codex", DOC_SCRIPT)).toContain("gpt-6-luna")
     expect(emitAdapter("claude")).toContain("--model opus")
     expect(emitAdapter("claude", DOC_SCRIPT)).toContain("--model opus")
     expect(emitAdapter("grok-cli")).toContain("grok-4.5")

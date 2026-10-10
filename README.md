@@ -216,6 +216,8 @@ Routing lets you define reusable execution profiles and bind them to CE-owned cl
 
 Native and converted consumer skills carry their own resolver, settings schema, protocol, role catalog, and execution reference, so they do not call back into this repository at runtime. Actual selector and serving-receipt support varies by host and installed version; deterministic tests prove packaging and adapter contracts, not live provider availability. See the [configuration reference](docs/skills/configuration.md) for profiles, precedence, trust and egress boundaries, redacted receipts, legacy settings, writer ownership, and the explicit live-host evidence gaps.
 
+The read-only Codex peer adapters default to GPT-6 Luna at `xhigh` for code/document review and GPT-6 Astra at `high` for POV consultations. Other provider defaults and independence gates are unchanged. These are adapter selections, not live availability or benchmark attestations; native subagent model choices remain controlled by your routing profiles.
+
 ### Full Skill Inventory
 
 | Skill | Purpose |

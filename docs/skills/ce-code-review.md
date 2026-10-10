@@ -88,6 +88,8 @@ Declared mappings run first. If a CLI rejects an obsolete or incompatible adapte
 
 This shares the provider/route kernel with `ce-doc-review` (parity-tested in CI) but keeps code-review's product scope: adversarial-only, diff/work-tree delivery, not doc-review's judgment trio or whole-doc sweep.
 
+The Codex adapter default is `gpt-6-luna` at `xhigh` reasoning. This is a model-selection default, not a fresh quality benchmark: the earlier GPT-5.6 Luna measurements do not prove GPT-6 non-inferiority or live CLI availability. Provider-family exclusion and serving-receipt checks still govern independent corroboration.
+
 Generalized routing may also bind the `review` class or individual `ce-code-review.*` roles to execution profiles. It changes only supported model/effort/route selectors and receipts after the skill has selected its roster; it cannot activate a reviewer, alter prompt bytes, grant local apply, or weaken the read-only peer boundary. The merged global/project syntax and host evidence limits are in the [configuration reference](./configuration.md#execution-routing).
 
 Large diffs stay on the same single-peer route without being serialized into one enormous prompt. The orchestrator sends a compact semantic review map — intent, material risk divisions, generated-tree treatment, and cross-division interactions — while the worker keeps the exact diff outside the prompt as a private, selectively readable artifact. Deterministic code never invents risk groups or cuts semantic shards; the adversarial agent works within the orchestrator's divisions and narrows its reads again when needed.

@@ -347,7 +347,7 @@ emit_provider_prefix() {
 # --- model + reasoning per provider ----------------------------------------
 # ONE model at HIGH reasoning per provider. Concrete IDs are the CURRENT instance of the tier principle
 # and the single maintenance point when model families change.
-M_CODEX="gpt-5.6-sol"          # codex CLI            (-c model_reasoning_effort="high")
+M_CODEX="gpt-6-astra"          # codex CLI            (-c model_reasoning_effort="high")
 M_CLAUDE="opus"                # claude CLI, Opus 4.8 (--effort high)
 M_GROK="grok-4.5"              # grok CLI             (--effort high)
 M_GROK_CURSOR="cursor-grok-4.5-high" # cursor-agent grok route (reasoning baked into id)

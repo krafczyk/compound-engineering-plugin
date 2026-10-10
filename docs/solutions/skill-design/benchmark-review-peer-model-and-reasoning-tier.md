@@ -173,8 +173,11 @@ write-up `docs/plans/2026-07-18-adversarial-peer-benchmark-report.md` and its ph
 log `docs/plans/2026-07-17-001-eval-cross-model-peer-model-config.md` — both predate
 the Luna/API-dollar update and do not contain it.
 Runnable harness (re-run when models change):
-`github.com/tmchow/cross-model-peer-eval` (private). Current config: `gpt-5.6-luna`
-at `xhigh` for both `ce-code-review` and `ce-doc-review` adversarial peers.
+`github.com/tmchow/cross-model-peer-eval` (private). The benchmark above evaluated
+`gpt-5.6-luna` at `xhigh`. The current Codex adapter defaults select `gpt-6-luna`
+at `xhigh` for both review skills; the GPT-5.6 quality and cost results do not
+establish GPT-6 non-inferiority. A new baseline/candidate run is required before
+claiming that result for GPT-6.
 
 ## Related
 
