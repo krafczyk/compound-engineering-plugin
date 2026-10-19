@@ -375,10 +375,34 @@ async function promptParts(host, prompt, input) {
     : null
 }
 
-function routeError(finalized) {
+// Provider payloads may contain prompts, headers and credentials. Only these
+// machine classifications, never free-form provider text, cross the tool boundary.
+function providerDiagnostic(error) {
+  const names = new Set(["APIError", "ProviderError", "UnknownError", "MessageAbortedError",
+    "ContextOverflowError", "MessageOutputLengthError", "LoadAPIKeyError"])
+  const codes = new Set(["cyber_policy", "content_policy_violation", "rate_limit_exceeded",
+    "insufficient_quota", "context_length_exceeded", "model_not_found", "invalid_api_key",
+    "permission_denied", "invalid_request_error", "server_error", "overloaded_error",
+    "authentication_error"])
+  const out = {}
+  if (names.has(error?.name)) out.name = error.name
+  const data = error?.data
+  if (Number.isInteger(data?.statusCode) && data.statusCode >= 100 && data.statusCode <= 599) out.statusCode = data.statusCode
+  if (typeof data?.isRetryable === "boolean") out.isRetryable = data.isRetryable
+  let code = data?.code
+  if (!codes.has(code) && typeof data?.responseBody === "string" && data.responseBody.length <= 8192) {
+    try { code = JSON.parse(data.responseBody)?.error?.code } catch {}
+  }
+  if (codes.has(code)) out.code = code
+  return Object.keys(out).length ? out : undefined
+}
+
+function routeError(finalized, diagnostic) {
   const code = finalized.error?.code ?? "ROUTE_UNAVAILABLE"
-  const error = new Error(`OpenCode routed task unavailable: ${code}`)
+  const detail = diagnostic ? `; provider=${JSON.stringify(diagnostic)}` : ""
+  const error = new Error(`OpenCode routed task unavailable: ${code}${detail}`)
   error.receipt = finalized.receipt
+  if (diagnostic) error.providerDiagnostic = diagnostic
   return error
 }
 
@@ -608,9 +632,9 @@ export function createOpenCodeRoutingAdapter(options) {
         throw unknown
       }
       await forgetChild(child.id)
-      return { finalized: await finalize(state, "failed", {}, priorAttempts) }
+      return { finalized: await finalize(state, "failed", {}, priorAttempts), diagnostic: providerDiagnostic(error) }
     }
-    if (terminalOutcome) return { finalized: await finalize(state, terminalOutcome, {}, priorAttempts) }
+    if (terminalOutcome) return { finalized: await finalize(state, terminalOutcome, {}, priorAttempts), diagnostic: providerDiagnostic(response?.info?.error) }
     const finalized = await finalize(state, "ok", servingReport(response, state.selector), priorAttempts)
     const active = activeChildren.get(child.id)
     if (closingSessions.has(state.sessionID) || closingChildren.has(child.id) || active?.closing) {
@@ -756,7 +780,7 @@ export function createOpenCodeRoutingAdapter(options) {
         priorAttempts = attempted.finalized.receipt.attempts
         continue
       }
-      if (attempted.finalized.action !== "accept") throw routeError(attempted.finalized)
+      if (attempted.finalized.action !== "accept") throw routeError(attempted.finalized, attempted.diagnostic)
       return {
         kind: "routed",
         output: textOutput(attempted.response),
@@ -928,17 +952,26 @@ export function createOpenCodeRoutingAdapter(options) {
   }
 }
 
+/**
+ * Create the bounded package-owned Python routing transport.
+ * @param {object} options Transport limits, spawn dependency and optional stable
+ * absolute stateRoot. stateRoot overrides storage only, never routing authority.
+ * @returns {Function} Async resolver accepting a routing request and host context.
+ * @throws {Error} On cancellation, transport failure, invalid output or a rejected
+ * resolver operation. Canonical finalizer blocks remain structured results.
+ */
 export function createOpenCodeResolver({
   timeoutMs = 10_000,
   maxStdoutBytes = 1_048_576,
   maxStderrBytes = 65_536,
   spawnProcess = spawn,
+  stateRoot,
 }) {
   return async function resolve(request, context) {
     return new Promise((resolve, reject) => {
       const child = spawnProcess("python3", ["-I", "-S", HOST_WRAPPER], {
         cwd: context.directory,
-        env: process.env,
+        env: stateRoot === undefined ? process.env : { ...process.env, CE_ROUTING_STATE_ROOT: stateRoot },
         stdio: ["pipe", "pipe", "pipe"],
       })
       let stdout = ""

@@ -38,6 +38,31 @@ async function runResolver(
   return { exitCode, body: JSON.parse(stdout) as Record<string, any>, stderr }
 }
 
+test("explicit routing state root holds inspection locks without falling back to OS temp", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "ce-state-root-"))
+  try {
+    const state = path.join(root, "state")
+    const result = await runResolver({ protocol: "ce-routing/v1", op: "inspect", cwd: root },
+      { cwd: root, home: root, env: { CE_ROUTING_STATE_ROOT: state } })
+    expect(result.exitCode).toBe(0)
+    expect((await readdir(path.join(state, "routing", "locks"))).length).toBeGreaterThan(0)
+    const snapshot = Bun.spawn(["python3", "-I", "-S", "-c", [
+      "import importlib.util",
+      `spec=importlib.util.spec_from_file_location('resolver', ${JSON.stringify(resolver)})`,
+      "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)",
+      "with module.snapshot_state_directory() as location: print(location)",
+    ].join("\n")], { env: { PATH: process.env.PATH ?? "/usr/bin:/bin", CE_ROUTING_STATE_ROOT: state },
+      stdout: "pipe", stderr: "pipe" })
+    await new Response(snapshot.stdout).text()
+    expect(await snapshot.exited).toBe(0)
+    expect((await stat(path.join(state, "routing", "snapshot-auth"))).isDirectory()).toBe(true)
+    const invalid = await runResolver({ protocol: "ce-routing/v1", op: "inspect", cwd: root },
+      { cwd: root, home: root, env: { CE_ROUTING_STATE_ROOT: "relative-state" } })
+    expect(invalid.exitCode).not.toBe(0)
+    expect(invalid.body.error.code).toBe("CONFIG_UNSAFE")
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 async function runResolverWithEnv(
   request: Record<string, unknown>,
   options: { cwd: string; env: Record<string, string> },

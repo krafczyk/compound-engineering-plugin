@@ -29,3 +29,31 @@ From this checkout, point OpenCode at the package path:
 ```
 
 Restart OpenCode after changing the package source.
+## Runtime storage and failure diagnostics
+
+The plugin accepts an optional `runtimeRoot` in its OpenCode plugin tuple:
+
+```json
+["file:///absolute/path/to/compound-engineering/.opencode/plugins/compound-engineering.js",
+ {"runtimeRoot": "/absolute/private/ce-runtime"}]
+```
+
+Create the directory beforehand, owned by the current user with mode0700, using
+its canonical nonsymlink path. Invalid roots fail before dispatch. This option
+places routing locks/authentication state and private task scratch beneath that
+root. Child shell commands inherit the stable `CE_ROUTING_STATE_ROOT` and their
+own task-specific `TMPDIR`/`TMP`/`TEMP`; parent commands use the configured root.
+Restart OpenCode after changing plugin configuration. Existing routing state in
+the former root is not moved or deleted; resume only with a fresh preparation.
+
+Standalone bundled diagnostics use the same root when launched with
+`CE_ROUTING_STATE_ROOT=/absolute/private/ce-runtime`. Keep it stable across
+concurrent invocations: a per-command temporary root cannot coordinate shared
+configuration locks or snapshot authentication. Without an override, Python
+routing retains its historical effective-user `/tmp` root and task scratch uses
+the host OS temporary directory.
+
+Terminal provider errors remain failed, consumed attempts. Error output includes
+only allowlisted error classifications, HTTP status and retryability, when
+available. Provider messages, response bodies, headers and prompts are omitted.
+These diagnostics do not change routing, retry permissions or provider safeguards.

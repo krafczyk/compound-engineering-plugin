@@ -1594,7 +1594,7 @@ def snapshot_state_directory():
     uid = current_uid()
     if uid is None:
         raise RoutingError("RUNTIME_UNSUPPORTED", "snapshot authentication requires an effective user ID")
-    anchor = SNAPSHOT_STATE_ROOT or "/tmp/compound-engineering-{}".format(uid)
+    anchor = SNAPSHOT_STATE_ROOT or routing_state_root()
     if not os.path.isabs(anchor):
         raise RoutingError("CONFIG_PATH_INVALID", "snapshot authentication state root must be absolute")
     anchor = os.path.abspath(anchor)
@@ -2587,12 +2587,27 @@ def ensure_private_dir(path):
             raise RoutingError("WRITE_UNSAFE", "cannot secure routing directory", exit_code=5, path=path) from exc
 
 
+def routing_state_root():
+    """Return the stable absolute routing control root, never a per-job temp root.
+
+    CE_ROUTING_STATE_ROOT is an explicit operator override shared by lock and
+    snapshot operations. Invalid overrides fail closed; normal private-directory
+    checks still apply. Absence preserves the historical effective-user root.
+    """
+    override = os.environ.get("CE_ROUTING_STATE_ROOT")
+    if override is not None:
+        if not override or not os.path.isabs(override):
+            raise RoutingError("CONFIG_UNSAFE", "CE_ROUTING_STATE_ROOT must be an absolute directory")
+        return override
+    return "/tmp/compound-engineering-{}".format(current_uid() if current_uid() is not None else "user")
+
+
 @contextlib.contextmanager
 def routing_lock(path, operation):
     writing = operation == fcntl.LOCK_EX
     error_code = "WRITE_UNSAFE" if writing else "CONFIG_UNSAFE"
     exit_code = 5 if writing else 3
-    scratch = "/tmp/compound-engineering-{}".format(current_uid() if current_uid() is not None else "user")
+    scratch = routing_state_root()
     ensure_private_dir(scratch)
     routing_dir = os.path.join(scratch, "routing")
     locks_dir = os.path.join(routing_dir, "locks")

@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import os from "os"
 import { describe, expect, test } from "bun:test"
 // @ts-expect-error -- plain JS plugin entrypoint, no type declarations
 import { CompoundEngineeringPlugin } from "../.opencode/plugins/compound-engineering.js"
@@ -39,6 +40,25 @@ const skills = fs
 const expectedTemplate = (name: string) => `Load and execute the \`${name}\` skill.\n\n$ARGUMENTS`
 
 describe("opencode plugin skill commands", () => {
+  test("explicit runtime root supplies routing and shell scratch without changing model settings", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "ce-plugin-runtime-"))
+    try {
+      const plugin = await CompoundEngineeringPlugin({
+        serverUrl: new URL("http://127.0.0.1:4096"), directory: process.cwd(),
+      }, { runtimeRoot: root })
+      const output = { env: { UNRELATED: "preserved" } }
+      await plugin["shell.env"]({}, output)
+      expect(output.env).toEqual({ UNRELATED: "preserved", CE_ROUTING_STATE_ROOT: root,
+        TMPDIR: root, TMP: root, TEMP: root })
+      const config = { model: "unchanged/model", command: {} }
+      await plugin.config(config)
+      expect(config.model).toBe("unchanged/model")
+      await expect(CompoundEngineeringPlugin({}, { runtimeRoot: "relative" })).rejects.toThrow(/absolute/)
+      fs.chmodSync(root, 0o755)
+      await expect(CompoundEngineeringPlugin({}, { runtimeRoot: root })).rejects.toThrow(/private/)
+    } finally { fs.rmSync(root, { recursive: true, force: true }) }
+  })
+
   test("registers a command for every user-invocable skill", async () => {
     const config = await applyPlugin()
     const expected = skills

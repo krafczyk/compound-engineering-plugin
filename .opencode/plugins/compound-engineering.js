@@ -73,7 +73,16 @@ function loadSkills() {
 
 const skillCommands = loadSkills()
 
-async function compoundEngineeringPlugin(input = {}, createClient) {
+async function compoundEngineeringPlugin(input = {}, createClient, pluginOptions = {}) {
+  const runtimeRoot = pluginOptions.runtimeRoot
+  if (runtimeRoot !== undefined) {
+    if (typeof runtimeRoot !== "string" || !path.isAbsolute(runtimeRoot)) throw new Error("CE runtimeRoot must be an absolute directory")
+    const info = fs.lstatSync(runtimeRoot)
+    if (!info.isDirectory() || info.isSymbolicLink() || fs.realpathSync(runtimeRoot) !== runtimeRoot
+      || (typeof process.getuid === "function" && info.uid !== process.getuid()) || (info.mode & 0o077) !== 0) {
+      throw new Error("CE runtimeRoot must be an existing canonical user-owned private directory")
+    }
+  }
   const hooks = {
     config: async (config) => {
       config.skills = config.skills || {}
@@ -97,7 +106,8 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
   const adapter = createOpenCodeRoutingAdapter({
     host,
     intents,
-    resolver: createOpenCodeResolver({}),
+    resolver: createOpenCodeResolver({ stateRoot: runtimeRoot }),
+    tempRoot: runtimeRoot,
   })
 
   hooks["chat.message"] = async ({ sessionID, messageID }, output) => {
@@ -136,6 +146,9 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
     if (commandText) intents.armCommand(sessionID, commandText.text)
   }
   hooks["shell.env"] = async ({ sessionID }, output) => {
+    if (runtimeRoot !== undefined) Object.assign(output.env, {
+      CE_ROUTING_STATE_ROOT: runtimeRoot, TMPDIR: runtimeRoot, TMP: runtimeRoot, TEMP: runtimeRoot,
+    })
     if (!sessionID) return
     const env = adapter.shellEnv(sessionID)
     if (env) Object.assign(output.env, env)
@@ -251,11 +264,14 @@ async function compoundEngineeringPlugin(input = {}, createClient) {
  *
  * @param {object} [options] Plugin dependency overrides.
  * @param {Function} [options.createClient] SDK client factory used for host operations.
- * @returns {Function} An async OpenCode plugin initializer that returns CE tools and lifecycle hooks.
+ * @returns {Function} An async initializer accepting OpenCode input and optional
+ * runtimeRoot plugin settings. runtimeRoot must be an existing canonical private
+ * directory; it supplies stable routing state and private per-task scratch without
+ * changing model, permission or route selection. Invalid roots throw before dispatch.
  * @throws {Error} When plugin initialization or a delegated host operation fails.
  */
 export function createCompoundEngineeringPlugin({ createClient = createOpencodeClient } = {}) {
-  return (input) => compoundEngineeringPlugin(input, createClient)
+  return (input, pluginOptions = {}) => compoundEngineeringPlugin(input, createClient, pluginOptions)
 }
 
 export const CompoundEngineeringPlugin = createCompoundEngineeringPlugin()

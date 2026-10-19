@@ -148,3 +148,17 @@ Feature setup writers remain project-local: Product Pulse, Sweep, Promote, and s
 - Prefer current-task instructions for one-off choices and global config for defaults wanted across projects.
 - Use project config only for selective checkout-specific overrides; remove an override to resume inheritance.
 - Re-run `/ce-setup` after plugin upgrades to refresh the committed example and inspect retired, malformed, unsafe, or unclassified settings. Malformed active configuration fails the affected read or dispatch closed; it is not silently ignored.
+## Routing runtime storage
+
+`CE_ROUTING_STATE_ROOT` selects an explicit absolute private directory for routing
+configuration locks and snapshot authentication, including standalone health
+checks. An empty or relative override fails closed. Existing ownership, symlink
+and permission checks apply; an override does not alter model/route configuration.
+Use one stable root for concurrent invocations, not a per-job temporary directory.
+Absent an override, the existing effective-user `/tmp/compound-engineering-<uid>`
+location is retained. Existing state is never automatically migrated or deleted.
+
+The native OpenCode plugin also accepts a `runtimeRoot` tuple option, described in
+`.opencode/INSTALL.md`, to set both this control root and child shell scratch.
+Restart OpenCode when changing that option. These are runtime storage controls,
+not CE YAML recipient settings or authority carriers.

@@ -1090,6 +1090,50 @@ describe("OpenCode routed task adapter", () => {
     }
   })
 
+  test("reports allowlisted provider failure details without leaking response payloads or retrying", async () => {
+    const { host, calls } = fakeHost({ response: {
+      info: { role: "assistant", error: { name: "APIError", data: {
+        statusCode: 400, isRetryable: false,
+        message: "private-prompt-marker",
+        responseHeaders: { authorization: "private-header-marker" },
+        responseBody: JSON.stringify({ error: { code: "cyber_policy", message: "private-body-marker" } }),
+      } } }, parts: [],
+    } })
+    const requests: Record<string, any>[] = []
+    const adapter = createOpenCodeRoutingAdapter({ host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }, requests) })
+    let failure: any
+    try {
+      await adapter.execute({ sessionID: "session", callID: "call-1", directory: "/repo",
+        role: ROLE, prompt: "unchanged bounded request" })
+    } catch (error) { failure = error }
+    expect(failure.message).toContain("ATTEMPT_FAILED")
+    expect(failure.message).toContain("cyber_policy")
+    expect(failure.message).toContain("400")
+    expect(failure.providerDiagnostic).toEqual({ name: "APIError", statusCode: 400,
+      code: "cyber_policy", isRetryable: false })
+    expect(JSON.stringify(failure)).not.toContain("private-")
+    expect(failure.message).not.toContain("private-")
+    expect(calls.prompts).toHaveLength(1)
+    expect(requests.at(-1).outcome).toBe("failed")
+    expect(await adapter.releaseCompletedSession("session")).toBe(true)
+  })
+
+  test("omits unrecognized provider names, codes and arbitrary response text", async () => {
+    const { host, calls } = fakeHost({ response: { info: { role: "assistant", error: {
+      name: "private-name-marker", data: { code: "private-code-marker",
+        message: "private-message-marker", responseBody: "private-body-marker" },
+    } }, parts: [] } })
+    const adapter = createOpenCodeRoutingAdapter({ host,
+      resolver: fakeResolver({ harness: "opencode", model: "openai/gpt-5.6" }) })
+    let failure: any
+    try { await adapter.execute({ sessionID: "session", callID: "call-1", directory: "/repo",
+      role: ROLE, prompt: "unchanged bounded request" }) } catch (error) { failure = error }
+    expect(failure.message).toBe("OpenCode routed task unavailable: ATTEMPT_FAILED")
+    expect(failure.providerDiagnostic).toBeUndefined()
+    expect(calls.prompts).toHaveLength(1)
+  })
+
   test("removes a terminal child even when canonical finalization rejects", async () => {
     let finalizations = 0
     const adapter = createOpenCodeRoutingAdapter({
